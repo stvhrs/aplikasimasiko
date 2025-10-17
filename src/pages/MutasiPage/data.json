@@ -1,0 +1,104 @@
+{
+  "buku": {
+    "-Buku_A01": {
+      "judul": "Belajar Firebase dari Nol",
+      "stok": 90,
+      "hargaJual": 100000,
+      "hargaJualSpesial": 80000,
+      "diskonJual": 0,
+      "diskonJualSpesial": 10,
+      "hargaCetak": 50000,
+      "hargaCetakSpesial": 45000,
+      "diskonCetak": 0,
+      "diskonCetakSpesial": 5,
+      "historiStok": {
+        "-Log_001": {
+          "timestamp": 1760652000000,
+          "keterangan": "Stok Awal",
+          "perubahan": 100,
+          "stokSebelum": 0,
+          "stokSesudah": 100
+        },
+        "-Log_002": {
+          "timestamp": 1760652100000,
+          "keterangan": "Penjualan via invoice INV-DUMMY-001",
+          "perubahan": -10,
+          "stokSebelum": 100,
+          "stokSesudah": 90
+        }
+      }
+    }
+  },
+  "pelanggan": {
+    "-Pelanggan_001": {
+      "nama": "PT. Pembeli Biasa",
+      "isSpesial": false,
+      "telepon": "08123456001"
+    },
+    "-Pelanggan_002": {
+      "nama": "Toko Buku Sahabat",
+      "isSpesial": true,
+      "telepon": "08123456002"
+    }
+  },
+  "transaksiJualBuku": {
+    "-TxJual_001": {
+      "nomorInvoice": "INV-DUMMY-001",
+      "tanggal": 1760652100000,
+      "idPelanggan": "-Pelanggan_002",
+      "namaPelanggan": "Toko Buku Sahabat",
+      "pelangganIsSpesial": true,
+      "items": [
+        {
+          "idBuku": "-Buku_A01",
+          "judulBuku": "Belajar Firebase dari Nol",
+          "jumlah": 10,
+          "hargaSatuan": 80000,
+          "diskonPersen": 10
+        }
+      ],
+      "totalTagihan": 720000,
+      "jumlahTerbayar": 500000,
+      "statusPembayaran": "DP",
+      "historiPembayaran": [
+        {
+          "idMutasi": "-Mutasi_001",
+          "tanggalBayar": 1760652300000,
+          "jumlahBayar": 500000,
+          "tipeMutasi": "Pembayaran Transaksi Buku"
+        }
+      ]
+    }
+  },
+  "transaksiCetakBuku": {
+    "-TxCetak_001": {
+      "nomorInvoice": "CETAK-DUMMY-001",
+      "tanggal": 1760652200000,
+      "idPelanggan": "-Pelanggan_001",
+      "namaPelanggan": "PT. Pembeli Biasa",
+      "pelangganIsSpesial": false,
+      "items": [
+        {
+          "idBuku": "-Buku_A01",
+          "judulBuku": "Belajar Firebase dari Nol",
+          "jumlah": 200,
+          "hargaSatuan": 50000,
+          "diskonPersen": 0
+        }
+      ],
+      "totalTagihan": 10000000,
+      "jumlahTerbayar": 0,
+      "statusPembayaran": "Belum Bayar",
+      "historiPembayaran": null
+    }
+  },
+  "mutasi": {
+    "-Mutasi_001": {
+      "idTransaksi": "-TxJual_001",
+      "tipeTransaksi": "jual",
+      "jumlahBayar": 500000,
+      "tanggalBayar": 1760652300000,
+      "tipeMutasi": "Pembayaran Transaksi Buku"
+    }
+  }
+}

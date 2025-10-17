@@ -6,18 +6,24 @@ import {
 import {
     PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SyncOutlined, DownloadOutlined, ShareAltOutlined
 } from '@ant-design/icons';
-import { ref, onValue, push, update, remove } from 'firebase/database';
+import { ref, onValue, push, update, remove,query, orderByChild, equalTo , } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import 'dayjs/locale/id';
 
-import { db, storage } from '../api/firebase';
+import { db, storage, } from '../api/firebase';
 import useDebounce from '../hooks/useDebounce';
 import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../constants';
-import TransaksiForm from '../components/TransaksiForm';
-import KategoriChips from '../components/KategoriChips';
-import RekapitulasiCard from '../components/RekapitulasiCard';
+
+import RekapitulasiCard from './MutasiPage/components/RekapitulasiCard';
+import KategoriChips from './MutasiPage/components/KategoriChips';
+
+// Impor komponen-komponen baru
+import FilterCard from './MutasiPage/components/FilterCard';
+import AksiKolom from './MutasiPage/components/AksiKolom';
+import BuktiModal from './MutasiPage/components/BuktiModal';
+import TransaksiForm from './MutasiPage/components/TransaksiForm'; // Pastikan Anda sudah memindahkan file ini
 
 dayjs.locale('id');
 
@@ -50,7 +56,65 @@ const MutasiPage = () => {
     const debouncedSearchText = useDebounce(filters.searchText, 500);
 
     const [modal, contextHolder] = Modal.useModal();
+   const [unpaidJual, setUnpaidJual] = useState([]);
+const [unpaidCetak, setUnpaidCetak] = useState([]);
+const [loadingInvoices, setLoadingInvoices] = useState(true);
 
+// Effect untuk mengambil invoice yang BELUM LUNAS
+useEffect(() => {
+  setLoadingInvoices(true);
+
+  // Fungsi helper untuk mengubah snapshot RTDB menjadi array
+  const snapshotToArray = (snapshot) => {
+    const data = snapshot.val();
+    return data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+  };
+
+  // Variabel sementara untuk menampung hasil
+  let jualBelumBayar = [];
+  let jualDP = [];
+  let cetakBelumBayar = [];
+  let cetakDP = [];
+
+  // Definisikan Query
+  const jualBelumBayarRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
+  const jualDPRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
+  const cetakBelumBayarRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
+  const cetakDPRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
+
+  // Buat 4 listener
+  const unsubJualBB = onValue(jualBelumBayarRef, (snapshot) => {
+    jualBelumBayar = snapshotToArray(snapshot);
+    setUnpaidJual([...jualBelumBayar, ...jualDP]); // Gabungkan hasil
+    setLoadingInvoices(false);
+  });
+
+  const unsubJualDP = onValue(jualDPRef, (snapshot) => {
+    jualDP = snapshotToArray(snapshot);
+    setUnpaidJual([...jualBelumBayar, ...jualDP]); // Gabungkan hasil
+    setLoadingInvoices(false);
+  });
+
+  const unsubCetakBB = onValue(cetakBelumBayarRef, (snapshot) => {
+    cetakBelumBayar = snapshotToArray(snapshot);
+    setUnpaidCetak([...cetakBelumBayar, ...cetakDP]); // Gabungkan hasil
+    setLoadingInvoices(false);
+  });
+
+  const unsubCetakDP = onValue(cetakDPRef, (snapshot) => {
+    cetakDP = snapshotToArray(snapshot);
+    setUnpaidCetak([...cetakBelumBayar, ...cetakDP]); // Gabungkan hasil
+    setLoadingInvoices(false);
+  });
+
+  // Cleanup listeners saat komponen unmount
+  return () => {
+    unsubJualBB();
+    unsubJualDP();
+    unsubCetakBB();
+    unsubCetakDP();
+  };
+}, []);
     // ---- Handlers umum ----
     const handleFilterChange = (key, value) => {
         if (key === 'searchText') {
@@ -159,7 +223,7 @@ const MutasiPage = () => {
 
 
     useEffect(() => {
-        const transaksiRef = ref(db, 'transaksi');
+        const transaksiRef = ref(db, 'mutasi');
         setLoading(true);
         const unsubscribeTransaksi = onValue(transaksiRef, (snapshot) => {
             const data = snapshot.val();
@@ -224,7 +288,7 @@ const MutasiPage = () => {
             cancelText: 'Batal',
             onOk: async () => {
                 try {
-                    await remove(ref(db, `transaksi/${id}`));
+                    await remove(ref(db, `mutasi/${id}`));
                     message.success('Transaksi berhasil dihapus');
                 } catch (error) {
                     console.error("Gagal menghapus:", error);
@@ -233,64 +297,83 @@ const MutasiPage = () => {
             },
         });
     }, [modal]);
-
     const handleFinishForm = async (values) => {
-        setIsSaving(true);
-        message.loading({ content: 'Menyimpan...', key: 'saving' });
-        try {
-            let buktiUrl = editingTransaksi?.buktiUrl || null;
+  setIsSaving(true);
+  message.loading({ content: 'Menyimpan...', key: 'saving' });
 
-            if (values.bukti && values.bukti.length > 0 && values.bukti[0].originFileObj) {
-                const file = values.bukti[0].originFileObj;
-               // Bersihkan nama file dari karakter aneh
-const safeKeterangan = values.keterangan
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-')        // ubah spasi dan simbol jadi strip
-  .replace(/^-+|-+$/g, '')            // hapus strip di awal/akhir
-  .substring(0, 50);                  // batasi panjang nama
+  const DB_PATH = 'mutasi';
 
-// Gunakan nama file dari keterangan + ekstensi asli
-const originalExt = file.name.split('.').pop();
-const fileName = `${safeKeterangan}-${uuidv4()}.${originalExt}`;
+  const { bukti, ...dataLain } = values;
+  const buktiFile = (bukti && bukti.length > 0 && bukti[0].originFileObj)
+    ? bukti[0].originFileObj
+    : null;
 
-const fileRef = storageRef(storage, `bukti_transaksi/${fileName}`);
-await uploadBytes(fileRef, file, {
-  contentType: file.type,
-  contentDisposition: `attachment; filename="${fileName}"`,
-});
-buktiUrl = await getDownloadURL(fileRef);
+  let buktiUrl = editingTransaksi?.buktiUrl || null;
 
-            } else if (!values.bukti || values.bukti.length === 0) {
-                buktiUrl = null;
-            }
+  try {
+    if (buktiFile) {
+      const safeKeterangan = dataLain.keterangan
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 50);
 
-            const jumlah = values.tipe === TipeTransaksi.pengeluaran ? -Math.abs(Number(values.jumlah)) : Number(values.jumlah);
+      const originalExt = buktiFile.name.split('.').pop();
+      const fileName = `${safeKeterangan}-${uuidv4()}.${originalExt}`;
+      const fileRef = storageRef(storage, `bukti_mutasi/${fileName}`);
 
-            const transaksiData = {
-                tanggal: values.tanggal.valueOf(),
-                jumlah,
-                keterangan: values.keterangan,
-                tipe: values.tipe,
-                kategori: values.kategori,
-                buktiUrl: buktiUrl,
-            };
+      await uploadBytes(fileRef, buktiFile, { contentType: buktiFile.type });
+      buktiUrl = await getDownloadURL(fileRef);
+    }
 
-            if (editingTransaksi) {
-                await update(ref(db, `transaksi/${editingTransaksi.id}`), transaksiData);
-                message.success({ content: 'Transaksi berhasil diperbarui', key: 'saving', duration: 2 });
-            } else {
-                await push(ref(db, 'transaksi'), transaksiData);
-                message.success({ content: 'Transaksi berhasil ditambahkan', key: 'saving', duration: 2 });
-            }
-            setIsModalOpen(false);
-            setEditingTransaksi(null);
-        } catch (error) {
-            console.error("Error saving transaction: ", error);
-            message.error({ content: 'Terjadi kesalahan saat menyimpan data', key: 'saving', duration: 2 });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    let dataToSave = {};
+    if (dataLain.idTransaksi) {
+      // pembayaran invoice
+      dataToSave = {
+        idTransaksi: dataLain.idTransaksi,
+        tipeTransaksi: dataLain.tipeTransaksi, // 'jual' | 'cetak'
+        jumlahBayar: Number(dataLain.jumlah),
+        tanggalBayar: dataLain.tanggal.valueOf(),
+        tipeMutasi: dataLain.tipeMutasi,
+        keterangan: dataLain.keterangan,
+        buktiUrl,
+      };
+    } else {
+      // mutasi umum
+      const jumlah = dataLain.tipe === TipeTransaksi.pengeluaran
+        ? -Math.abs(Number(dataLain.jumlah))
+        : Number(dataLain.jumlah);
+
+      dataToSave = {
+        jumlah,
+        kategori: dataLain.kategori,
+        keterangan: dataLain.keterangan,
+        tanggal: dataLain.tanggal.valueOf(),
+        tipe: dataLain.tipe,
+        buktiUrl,
+      };
+    }
+
+    if (editingTransaksi) {
+      // ⬇️ JANGAN pakai nama 'ref' di sini
+      const txRef = ref(db, `${DB_PATH}/${editingTransaksi.id}`);
+      await update(txRef, dataToSave);
+      message.success({ content: 'Mutasi berhasil diperbarui', key: 'saving', duration: 2 });
+    } else {
+      const listRef = ref(db, DB_PATH);
+      await push(listRef, dataToSave);
+      message.success({ content: 'Mutasi berhasil ditambahkan', key: 'saving', duration: 2 });
+    }
+
+    setIsModalOpen(false);
+    setEditingTransaksi(null);
+  } catch (error) {
+    console.error("Error saving transaction: ", error);
+    message.error({ content: 'Terjadi kesalahan saat menyimpan data', key: 'saving', duration: 4 });
+  } finally {
+    setIsSaving(false);
+  }
+};
 
     const currencyFormatter = (value) =>
         new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
@@ -369,13 +452,18 @@ buktiUrl = await getDownloadURL(fileRef);
             <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 10 }}>
                 <Button type="primary" shape="round" icon={<PlusOutlined />} size="large" style={{ boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' }} onClick={handleTambah}>Tambah</Button>
             </div>
-            <TransaksiForm
-                open={isModalOpen}
-                onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
-                onFinish={handleFinishForm}
-                initialValues={editingTransaksi}
-                loading={isSaving}
-            />
+           <TransaksiForm
+  open={isModalOpen}
+  onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
+  onFinish={handleFinishForm}
+  initialValues={editingTransaksi}
+  loading={isSaving}
+
+  // --- TAMBAHKAN PROPS INI ---
+  unpaidJual={unpaidJual}
+  unpaidCetak={unpaidCetak}
+  loadingInvoices={loadingInvoices}
+/>
             <Modal
                 open={isProofModalOpen}
                 title="Bukti Transaksi"

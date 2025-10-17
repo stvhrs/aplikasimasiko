@@ -23,7 +23,7 @@ const random = {
 };
 
 const generateDummyData = async (db, onProgress) => {
-  const transaksiRef = ref(db, 'transaksi');
+  const transaksiRef = ref(db, 'mutasi');
   const totalData = 1000;
   const batchSize = 500;
   let dataGenerated = 0;
@@ -72,7 +72,7 @@ const DataGeneratorPage = () => {
 
     try {
       await generateDummyData(db, (p) => setProgress(p));
-      message.success({ content: `SUKSES! 1000 data berhasil dibuat.`, key: 'generator', duration: 4 });
+      message.success({ content: `SUKSES! 20000 data berhasil dibuat.`, key: 'generator', duration: 4 });
     } catch (error) {
       console.error("Error generating data:", error);
       message.error({ content: 'Gagal membuat data, lihat konsol untuk detail.', key: 'generator', duration: 4 });
@@ -89,7 +89,7 @@ const DataGeneratorPage = () => {
         <Row align="middle" gutter={[16, 16]}>
           <Col>
             <Button type="primary" size="large" onClick={handleGenerate} loading={isGenerating}>
-              {isGenerating ? 'Sedang Membuat Data...' : 'Buat 1000 Data Transaksi'}
+              {isGenerating ? 'Sedang Membuat Data...' : 'Buat 20000 Data Transaksi'}
             </Button>
           </Col>
           <Col flex="auto">
@@ -97,7 +97,7 @@ const DataGeneratorPage = () => {
           </Col>
         </Row>
         <Paragraph style={{ marginTop: '16px' }} type="warning">
-          <strong>Perhatian:</strong> Proses ini akan menambahkan 100 entri baru ke node <code>transaksi</code> di Firebase Realtime Database Anda. Proses ini tidak dapat dibatalkan.
+          <strong>Perhatian:</strong> Proses ini akan menambahkan 20 ribu entri baru ke node <code>transaksi</code> di Firebase Realtime Database Anda. Proses ini tidak dapat dibatalkan.
         </Paragraph>
       </Card>
     </Content>

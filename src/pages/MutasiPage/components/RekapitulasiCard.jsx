@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Card, Typography, Row, Col, Divider } from 'antd';
-import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../constants';
+import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../../../constants';
 
 const { Title, Text } = Typography;
 
