@@ -10,8 +10,10 @@ const { Option } = Select;
 const { Title } = Typography; // <-- PERUBAHAN 2: Ambil Title dari Typography
 
 const TIPE_BUKU_OPTIONS = ['HET', 'BTP', 'BUKU UTAMA', 'Referensi', 'Fiksi'];
-const KELAS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+// GANTI INI:
 
+// MENJADI INI:
+const KELAS_OPTIONS = ['PAUD', 'TK A', 'TK B', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'Umum'];
 const BukuForm = ({ open, onCancel, initialValues }) => {
     const [form] = Form.useForm();
     const [isSaving, setIsSaving] = useState(false);
@@ -139,7 +141,11 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                     <Col span={8}>
                         <Form.Item name="kelas" label="Kelas">
                             <Select placeholder="Pilih kelas" allowClear>
-                                {KELAS_OPTIONS.map(k => <Option key={k} value={k}>{`Kelas ${k}`}</Option>)}
+                            {KELAS_OPTIONS.map(k => (
+    <Option key={k} value={k}>
+        {typeof k === 'number' ? `Kelas ${k}` : k}
+    </Option>
+))}
                             </Select>
                         </Form.Item>
                     </Col>

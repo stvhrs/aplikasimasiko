@@ -1,42 +1,57 @@
+// Di dalam file SideMenu.jsx
 import React from 'react';
-import { Layout, Menu, Typography } from 'antd';
+import { Link } from 'react-router-dom'; // <-- 1. IMPORT Link
+import { Layout, Menu } from 'antd';
 import {
-  DashboardOutlined, SwapOutlined, MoneyCollectOutlined, ToolOutlined,
-  BookFilled
+  BookOutlined,
+  SwapOutlined,
+  ExperimentOutlined,
+  ShoppingCartOutlined
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
-const { Title } = Typography;
 
-const menuItems = [
-  { key: '1', icon: <BookFilled />, label: 'Data Buku' },
-  { key: '2', icon: <SwapOutlined />, label: 'Mutasi' },
-  { key: '3', icon: <SwapOutlined />, label: 'Penjualan Buku' },
- 
-  { type: 'divider' },
-  { key: '4', icon: <ToolOutlined />, label: 'Generator Data' },
-];
+// Ini adalah komponen Menu yang akan dipakai di Sider dan Drawer
+export const NavigationMenu = ({ activeKey, onLinkClick }) => {
+  const handleMenuClick = () => {
+    if (onLinkClick) {
+      onLinkClick(); // Panggil fungsi untuk menutup drawer di mobile
+    }
+  };
 
-export const NavigationMenu = ({ onMenuSelect, activeKey }) => (
-  <Menu
-    theme="dark"
-    selectedKeys={[activeKey]}
-    mode="inline"
-    items={menuItems}
-    onClick={({ key }) => onMenuSelect(key)}
-  />
-);
+  return (
+    <Menu
+      theme="dark"
+      mode="inline"
+      selectedKeys={[activeKey]} // 'selectedKeys' lebih tepat untuk ini
+      onClick={handleMenuClick}
+    >
+      <Menu.Item key="/buku" icon={<BookOutlined />}>
+        {/* 2. BUNGKUS DENGAN <Link> */}
+        <Link to="/buku">Master Buku</Link>
+      </Menu.Item>
+      <Menu.Item key="/mutasi" icon={<SwapOutlined />}>
+        <Link to="/mutasi">Mutasi</Link>
+      </Menu.Item>
+      <Menu.Item key="/transaksi-jual" icon={<ShoppingCartOutlined />}>
+        <Link to="/transaksi-jual">Transaksi Jual</Link>
+      </Menu.Item>
+      <Menu.Item key="/pelanggan" icon={<ExperimentOutlined />}>
+        <Link to="/pelanggan">Pelanggan</Link>
+      </Menu.Item>
+     
+    </Menu>
+  );
+};
 
-const SideMenu = ({ collapsed, onCollapse, onMenuSelect, activeKey }) => {
+
+// Komponen Sider utama untuk desktop
+const SideMenu = ({ collapsed, onCollapse, activeKey }) => {
   return (
     <Sider
       collapsible
       collapsed={collapsed}
       onCollapse={onCollapse}
-      width={240}
-      collapsedWidth={80}
-      theme="dark"
-      // Apply styles to fix the Sider and make it scroll independently
       style={{
         overflow: 'auto',
         height: '100vh',
@@ -44,23 +59,16 @@ const SideMenu = ({ collapsed, onCollapse, onMenuSelect, activeKey }) => {
         left: 0,
         top: 0,
         bottom: 0,
-        zIndex: 10, // Ensure sider stays on top
       }}
+      width={240}
     >
-      <div
-        style={{
-          height: 32,
-          margin: 16,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px'
-        }}
-      >
-        <MoneyCollectOutlined style={{ fontSize: '24px', color: 'white' }}/>
-        {!collapsed && <Title level={5} style={{ marginBottom: 0, color: 'white' }}>Mas Iko Finance</Title>}
+      <div style={{ height: '32px', margin: '16px', background: 'rgba(255, 255, 255, 0.2)', textAlign: 'center', lineHeight: '32px', color: 'white' }}>
+        {collapsed ? 'AMI' : 'Aplikasi Mas Iko'}
       </div>
-      <NavigationMenu onMenuSelect={onMenuSelect} activeKey={activeKey} />
+
+      {/* 3. GUNAKAN NavigationMenu, 'onMenuSelect' sudah tidak ada */}
+      <NavigationMenu activeKey={activeKey} />
+
     </Sider>
   );
 };
