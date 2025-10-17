@@ -1,15 +1,17 @@
 import React from 'react';
 import { Layout, Menu, Typography } from 'antd';
 import {
-  DashboardOutlined, SwapOutlined, MoneyCollectOutlined, ToolOutlined
+  DashboardOutlined, SwapOutlined, MoneyCollectOutlined, ToolOutlined,
+  BookFilled
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
 const { Title } = Typography;
 
 const menuItems = [
-  { key: '1', icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '1', icon: <BookFilled />, label: 'Data Buku' },
   { key: '2', icon: <SwapOutlined />, label: 'Mutasi' },
+  { key: '3', icon: <SwapOutlined />, label: 'Penjualan Buku' },
  
   { type: 'divider' },
   { key: '4', icon: <ToolOutlined />, label: 'Generator Data' },

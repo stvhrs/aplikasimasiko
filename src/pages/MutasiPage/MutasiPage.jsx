@@ -4,26 +4,23 @@ import {
     message, Tooltip, Empty, Grid, DatePicker, Spin
 } from 'antd';
 import {
-    PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SyncOutlined, DownloadOutlined, ShareAltOutlined
+    PlusOutlined, EditOutlined, EyeOutlined, SyncOutlined, DownloadOutlined, ShareAltOutlined
 } from '@ant-design/icons';
-import { ref, onValue, push, update, remove,query, orderByChild, equalTo , } from 'firebase/database';
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { v4 as uuidv4 } from 'uuid';
+// --- Impor Firebase Disederhanakan ---
+import { ref, onValue, query, orderByChild, equalTo } from 'firebase/database';
 import dayjs from 'dayjs';
 import 'dayjs/locale/id';
 
-import { db, storage, } from '../api/firebase';
-import useDebounce from '../hooks/useDebounce';
-import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../constants';
+import { db } from '../../api/firebase'; // Pastikan path ini benar
+import useDebounce from '../../hooks/useDebounce'; // Pastikan path ini benar
+import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../../constants'; // Pastikan path ini benar
 
-import RekapitulasiCard from './MutasiPage/components/RekapitulasiCard';
-import KategoriChips from './MutasiPage/components/KategoriChips';
+import RekapitulasiCard from './components/RekapitulasiCard'; // Pastikan path ini benar
+import KategoriChips from './components/KategoriChips'; // Pastikan path ini benar
 
 // Impor komponen-komponen baru
-import FilterCard from './MutasiPage/components/FilterCard';
-import AksiKolom from './MutasiPage/components/AksiKolom';
-import BuktiModal from './MutasiPage/components/BuktiModal';
-import TransaksiForm from './MutasiPage/components/TransaksiForm'; // Pastikan Anda sudah memindahkan file ini
+// Pastikan path ini benar
+import TransaksiForm from './components/TransaksiForm'; 
 
 dayjs.locale('id');
 
@@ -46,7 +43,6 @@ const MutasiPage = () => {
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTransaksi, setEditingTransaksi] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
     const [isProofModalOpen, setIsProofModalOpen] = useState(false);
     const [viewingProofUrl, setViewingProofUrl] = useState('');
     const [isProofLoading, setIsProofLoading] = useState(false);
@@ -55,66 +51,66 @@ const MutasiPage = () => {
     const screens = Grid.useBreakpoint();
     const debouncedSearchText = useDebounce(filters.searchText, 500);
 
-    const [modal, contextHolder] = Modal.useModal();
-   const [unpaidJual, setUnpaidJual] = useState([]);
-const [unpaidCetak, setUnpaidCetak] = useState([]);
-const [loadingInvoices, setLoadingInvoices] = useState(true);
+    const [unpaidJual, setUnpaidJual] = useState([]);
+    const [unpaidCetak, setUnpaidCetak] = useState([]);
+    const [loadingInvoices, setLoadingInvoices] = useState(true);
 
-// Effect untuk mengambil invoice yang BELUM LUNAS
-useEffect(() => {
-  setLoadingInvoices(true);
+    // --- FUNGSI HELPER UNTUK TANGGAL KONSISTEN ---
+    // Fungsi helper untuk mengambil timestamp yang valid secara konsisten
+    // Memberi fallback 0 jika data tanggal tidak ada/null
+    const getTimestamp = (record) => record?.tanggal || record?.tanggalBayar || 0;
+    // --- AKHIR FUNGSI HELPER ---
 
-  // Fungsi helper untuk mengubah snapshot RTDB menjadi array
-  const snapshotToArray = (snapshot) => {
-    const data = snapshot.val();
-    return data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-  };
+    // Effect untuk mengambil invoice yang BELUM LUNAS
+    useEffect(() => {
+        setLoadingInvoices(true);
+        const snapshotToArray = (snapshot) => {
+            const data = snapshot.val();
+            return data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+        };
 
-  // Variabel sementara untuk menampung hasil
-  let jualBelumBayar = [];
-  let jualDP = [];
-  let cetakBelumBayar = [];
-  let cetakDP = [];
+        let jualBelumBayar = [];
+        let jualDP = [];
+        let cetakBelumBayar = [];
+        let cetakDP = [];
 
-  // Definisikan Query
-  const jualBelumBayarRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
-  const jualDPRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
-  const cetakBelumBayarRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
-  const cetakDPRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
+        const jualBelumBayarRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
+        const jualDPRef = query(ref(db, 'transaksiJualBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
+        const cetakBelumBayarRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('Belum Bayar'));
+        const cetakDPRef = query(ref(db, 'transaksiCetakBuku'), orderByChild('statusPembayaran'), equalTo('DP'));
 
-  // Buat 4 listener
-  const unsubJualBB = onValue(jualBelumBayarRef, (snapshot) => {
-    jualBelumBayar = snapshotToArray(snapshot);
-    setUnpaidJual([...jualBelumBayar, ...jualDP]); // Gabungkan hasil
-    setLoadingInvoices(false);
-  });
+        const unsubJualBB = onValue(jualBelumBayarRef, (snapshot) => {
+            jualBelumBayar = snapshotToArray(snapshot);
+            setUnpaidJual([...jualBelumBayar, ...jualDP]);
+            setLoadingInvoices(false);
+        });
 
-  const unsubJualDP = onValue(jualDPRef, (snapshot) => {
-    jualDP = snapshotToArray(snapshot);
-    setUnpaidJual([...jualBelumBayar, ...jualDP]); // Gabungkan hasil
-    setLoadingInvoices(false);
-  });
+        const unsubJualDP = onValue(jualDPRef, (snapshot) => {
+            jualDP = snapshotToArray(snapshot);
+            setUnpaidJual([...jualBelumBayar, ...jualDP]);
+            setLoadingInvoices(false);
+        });
 
-  const unsubCetakBB = onValue(cetakBelumBayarRef, (snapshot) => {
-    cetakBelumBayar = snapshotToArray(snapshot);
-    setUnpaidCetak([...cetakBelumBayar, ...cetakDP]); // Gabungkan hasil
-    setLoadingInvoices(false);
-  });
+        const unsubCetakBB = onValue(cetakBelumBayarRef, (snapshot) => {
+            cetakBelumBayar = snapshotToArray(snapshot);
+            setUnpaidCetak([...cetakBelumBayar, ...cetakDP]);
+            setLoadingInvoices(false);
+        });
 
-  const unsubCetakDP = onValue(cetakDPRef, (snapshot) => {
-    cetakDP = snapshotToArray(snapshot);
-    setUnpaidCetak([...cetakBelumBayar, ...cetakDP]); // Gabungkan hasil
-    setLoadingInvoices(false);
-  });
+        const unsubCetakDP = onValue(cetakDPRef, (snapshot) => {
+            cetakDP = snapshotToArray(snapshot);
+            setUnpaidCetak([...cetakBelumBayar, ...cetakDP]);
+            setLoadingInvoices(false);
+        });
 
-  // Cleanup listeners saat komponen unmount
-  return () => {
-    unsubJualBB();
-    unsubJualDP();
-    unsubCetakBB();
-    unsubCetakDP();
-  };
-}, []);
+        return () => {
+            unsubJualBB();
+            unsubJualDP();
+            unsubCetakBB();
+            unsubCetakDP();
+        };
+    }, []);
+
     // ---- Handlers umum ----
     const handleFilterChange = (key, value) => {
         if (key === 'searchText') {
@@ -222,44 +218,64 @@ useEffect(() => {
     };
 
 
+    // Effect untuk mengambil data mutasi
     useEffect(() => {
         const transaksiRef = ref(db, 'mutasi');
         setLoading(true);
         const unsubscribeTransaksi = onValue(transaksiRef, (snapshot) => {
             const data = snapshot.val();
             const loadedTransaksi = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-            loadedTransaksi.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+            
+            // --- DIPERBARUI ---
+            // Gunakan getTimestamp untuk sorting awal (b - a = terbaru dulu)
+            loadedTransaksi.sort((a, b) => getTimestamp(b) - getTimestamp(a));
+            // --- AKHIR PERBARUAN ---
+
             setTransaksiList(loadedTransaksi);
             setLoading(false);
         });
         return () => unsubscribeTransaksi();
-    }, []);
+    }, []); // Dependency array kosong, hanya run sekali saat mount
 
+    // Memo untuk kalkulasi saldo berjalan
     const balanceMap = useMemo(() => {
         if (!transaksiList || transaksiList.length === 0) return new Map();
-        const sortedAllTx = [...transaksiList].sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+
+        // --- DIPERBARUI ---
+        // Gunakan getTimestamp untuk sorting (a - b = terlama dulu)
+        const sortedAllTx = [...transaksiList].sort((a, b) => getTimestamp(a) - getTimestamp(b));
+        // --- AKHIR PERBARUAN ---
+
         const map = new Map();
         let currentBalance = 0;
         for (const tx of sortedAllTx) {
-            currentBalance += tx.jumlah;
+            // Gunakan `jumlah` (yang +/-) untuk kalkulasi saldo
+            currentBalance += (tx.jumlah || 0); // Pastikan `jumlah` ada
             map.set(tx.id, currentBalance);
         }
         return map;
-    }, [transaksiList]);
+    }, [transaksiList]); // Hanya bergantung pada transaksiList
 
+    // Memo untuk data yang difilter
     const filteredTransaksi = useMemo(() => {
         if (!transaksiList) return [];
         return transaksiList.filter(tx => {
-            const tgl = dayjs(tx.tanggal);
+            
+            // --- DIPERBARUI ---
+            const tgl = dayjs(getTimestamp(tx)); // Gunakan tanggal yang konsisten
+            // --- AKHIR PERBARUAN ---
+            
             const [startDate, endDate] = filters.dateRange || [null, null];
             const inDate = !startDate || (tgl.isAfter(startDate.startOf('day')) && tgl.isBefore(endDate.endOf('day')));
             const inTipe = filters.selectedTipe.length === 0 || filters.selectedTipe.includes(tx.tipe);
-            const inKategori = filters.selectedKategori.length === 0 || filters.selectedKategori.includes(tx.kategori);
+            // Gunakan `kategori` atau `tipeMutasi` untuk filter
+            const inKategori = filters.selectedKategori.length === 0 || filters.selectedKategori.includes(tx.kategori) || filters.selectedKategori.includes(tx.tipeMutasi);
             const inSearch = debouncedSearchText === '' || String(tx.keterangan || '').toLowerCase().includes(debouncedSearchText.toLowerCase());
             return inDate && inTipe && inKategori && inSearch;
         }).map(tx => ({ ...tx, saldoSetelah: balanceMap.get(tx.id) }));
     }, [transaksiList, filters.dateRange, filters.selectedTipe, filters.selectedKategori, debouncedSearchText, balanceMap]);
 
+    // Effect untuk loading spinner saat filter
     useEffect(() => {
         if (isFiltering) {
             const timer = setTimeout(() => setIsFiltering(false), 300);
@@ -269,6 +285,7 @@ useEffect(() => {
 
     const isFilterActive = !!filters.dateRange || filters.selectedTipe.length > 0 || filters.selectedKategori.length > 0 || filters.searchText !== '';
 
+    // Handler untuk modal
     const handleTambah = () => {
         setEditingTransaksi(null);
         setIsModalOpen(true);
@@ -279,121 +296,86 @@ useEffect(() => {
         setIsModalOpen(true);
     }, []);
 
-    const handleDelete = useCallback((id) => {
-        modal.confirm({
-            title: 'Konfirmasi Hapus',
-            content: 'Apakah Anda yakin ingin menghapus transaksi ini?',
-            okText: 'Hapus',
-            okType: 'danger',
-            cancelText: 'Batal',
-            onOk: async () => {
-                try {
-                    await remove(ref(db, `mutasi/${id}`));
-                    message.success('Transaksi berhasil dihapus');
-                } catch (error) {
-                    console.error("Gagal menghapus:", error);
-                    message.error('Gagal menghapus transaksi');
-                }
-            },
-        });
-    }, [modal]);
-    const handleFinishForm = async (values) => {
-  setIsSaving(true);
-  message.loading({ content: 'Menyimpan...', key: 'saving' });
-
-  const DB_PATH = 'mutasi';
-
-  const { bukti, ...dataLain } = values;
-  const buktiFile = (bukti && bukti.length > 0 && bukti[0].originFileObj)
-    ? bukti[0].originFileObj
-    : null;
-
-  let buktiUrl = editingTransaksi?.buktiUrl || null;
-
-  try {
-    if (buktiFile) {
-      const safeKeterangan = dataLain.keterangan
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .substring(0, 50);
-
-      const originalExt = buktiFile.name.split('.').pop();
-      const fileName = `${safeKeterangan}-${uuidv4()}.${originalExt}`;
-      const fileRef = storageRef(storage, `bukti_mutasi/${fileName}`);
-
-      await uploadBytes(fileRef, buktiFile, { contentType: buktiFile.type });
-      buktiUrl = await getDownloadURL(fileRef);
-    }
-
-    let dataToSave = {};
-    if (dataLain.idTransaksi) {
-      // pembayaran invoice
-      dataToSave = {
-        idTransaksi: dataLain.idTransaksi,
-        tipeTransaksi: dataLain.tipeTransaksi, // 'jual' | 'cetak'
-        jumlahBayar: Number(dataLain.jumlah),
-        tanggalBayar: dataLain.tanggal.valueOf(),
-        tipeMutasi: dataLain.tipeMutasi,
-        keterangan: dataLain.keterangan,
-        buktiUrl,
-      };
-    } else {
-      // mutasi umum
-      const jumlah = dataLain.tipe === TipeTransaksi.pengeluaran
-        ? -Math.abs(Number(dataLain.jumlah))
-        : Number(dataLain.jumlah);
-
-      dataToSave = {
-        jumlah,
-        kategori: dataLain.kategori,
-        keterangan: dataLain.keterangan,
-        tanggal: dataLain.tanggal.valueOf(),
-        tipe: dataLain.tipe,
-        buktiUrl,
-      };
-    }
-
-    if (editingTransaksi) {
-      // ⬇️ JANGAN pakai nama 'ref' di sini
-      const txRef = ref(db, `${DB_PATH}/${editingTransaksi.id}`);
-      await update(txRef, dataToSave);
-      message.success({ content: 'Mutasi berhasil diperbarui', key: 'saving', duration: 2 });
-    } else {
-      const listRef = ref(db, DB_PATH);
-      await push(listRef, dataToSave);
-      message.success({ content: 'Mutasi berhasil ditambahkan', key: 'saving', duration: 2 });
-    }
-
-    setIsModalOpen(false);
-    setEditingTransaksi(null);
-  } catch (error) {
-    console.error("Error saving transaction: ", error);
-    message.error({ content: 'Terjadi kesalahan saat menyimpan data', key: 'saving', duration: 4 });
-  } finally {
-    setIsSaving(false);
-  }
-};
-
     const currencyFormatter = (value) =>
         new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
 
+    // Memo untuk kolom tabel
     const columns = useMemo(() => {
         const baseColumns = [
-            { title: 'Tanggal', dataIndex: 'tanggal', key: 'tanggal', render: (tgl) => dayjs(tgl).format('DD MMM YYYY'), sorter: (a, b) => a.tanggal - b.tanggal, defaultSortOrder: 'descend', width: 140 },
-            { title: 'Jenis Transaksi', dataIndex: 'kategori', key: 'kategori', render: (kategori, record) => { const kategoriText = record.tipe === 'pemasukan' ? KategoriPemasukan[kategori] || kategori.replace(/_/g, ' ') : KategoriPengeluaran[kategori] || kategori.replace(/_/g, ' '); return <Tag color={record.tipe === 'pemasukan' ? 'green' : 'red'}>{kategoriText}</Tag>; }, width: 200 },
-            { title: 'Keterangan', dataIndex: 'keterangan', key: 'keterangan' },
-            { title: 'Nominal', dataIndex: 'jumlah', key: 'jumlah', align: 'right', render: (jml) => <Text type={jml >= 0 ? 'success' : 'danger'}>{currencyFormatter(jml)}</Text>, sorter: (a, b) => a.jumlah - b.jumlah, width: 180 },
-            { title: 'Saldo Akhir', dataIndex: 'saldoSetelah', key: 'saldoSetelah', align: 'right', render: (saldo) => (saldo !== null && saldo !== undefined) ? currencyFormatter(saldo) : <Text type="secondary">-</Text>, sorter: (a, b) => (a.saldoSetelah || 0) - (b.saldoSetelah || 0), width: 180 },
-            { title: 'Aksi', key: 'aksi', align: 'center', render: (_, record) => (<Space size="middle"> <Tooltip title={record.buktiUrl ? "Lihat Bukti" : "Tidak ada bukti"}> <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewProof(record.buktiUrl)} disabled={!record.buktiUrl} /> </Tooltip> <Tooltip title="Edit Transaksi"> <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} /> </Tooltip> <Tooltip title="Hapus Transaksi"> <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} /> </Tooltip> </Space>), width: 140 },
+            { 
+                title: 'Tanggal', 
+                dataIndex: 'tanggal', 
+                key: 'tanggal', 
+                
+                // --- DIPERBARUI 'render' ---
+                render: (tgl, record) => dayjs(getTimestamp(record)).format('DD MMM YYYY'), 
+                
+                // --- DIPERBARUI 'sorter' ---
+                sorter: (a, b) => getTimestamp(a) - getTimestamp(b), 
+                
+                defaultSortOrder: 'descend', 
+                width: 140 
+            },
+            { 
+                title: 'Jenis Transaksi', 
+                dataIndex: 'kategori', 
+                key: 'kategori', 
+                render: (kategori, record) => { 
+                    const kategoriText = record.tipe === 'pemasukan' 
+                        ? KategoriPemasukan[kategori] || kategori?.replace(/_/g, ' ') 
+                        : KategoriPengeluaran[kategori] || kategori?.replace(/_/g, ' '); 
+                    return <Tag color={record.tipe === 'pemasukan' ? 'green' : 'red'}>{kategoriText || record.tipeMutasi}</Tag>; 
+                }, 
+                width: 200 
+            },
+            { 
+                title: 'Keterangan', 
+                dataIndex: 'keterangan', 
+                key: 'keterangan' 
+            },
+            { 
+                title: 'Nominal', 
+                dataIndex: 'jumlah', 
+                key: 'jumlah', 
+                align: 'right', 
+                // --- DIPERBARUI 'render' ---
+                render: (jml, record) => <Text type={record.jumlah >= 0 ? 'success' : 'danger'}>{currencyFormatter(record.jumlah)}</Text>, 
+                sorter: (a, b) => a.jumlah - b.jumlah, 
+                width: 180 
+            },
+            { 
+                title: 'Saldo Akhir', 
+                dataIndex: 'saldoSetelah', 
+                key: 'saldoSetelah', 
+                align: 'right', 
+                render: (saldo) => (saldo !== null && saldo !== undefined) ? currencyFormatter(saldo) : <Text type="secondary">-</Text>, 
+                sorter: (a, b) => (a.saldoSetelah || 0) - (b.saldoSetelah || 0), 
+                width: 180 
+            },
+            {
+                title: 'Aksi', 
+                key: 'aksi', 
+                align: 'center', 
+                render: (_, record) => (
+                    <Space size="middle">
+                        <Tooltip title={record.buktiUrl ? "Lihat Bukti" : "Tidak ada bukti"}>
+                            <Button type="link" icon={<EyeOutlined />} onClick={() => handleViewProof(record.buktiUrl)} disabled={!record.buktiUrl} />
+                        </Tooltip>
+                        <Tooltip title="Edit Transaksi">
+                            <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                        </Tooltip>
+                    </Space>
+                ), 
+                width: 140
+            },
         ];
         if (!screens.md) return baseColumns.filter(col => col.key !== 'saldoSetelah');
         return baseColumns;
-    }, [screens, handleEdit, handleDelete]);
+    }, [screens, handleEdit]); // Dependency array sudah benar
 
     return (
         <Content style={{ padding: screens.xs ? '12px' : '24px', backgroundColor: '#f0f2f5' }}>
-            {contextHolder}
+            
             <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
                 <Col xs={24} lg={14}>
                     <Card style={{ height: '100%' }}>
@@ -436,6 +418,7 @@ useEffect(() => {
                     )}
                 </Col>
             </Row>
+            
             <Card>
                 <Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>Daftar Transaksi</Title>
                 <Table
@@ -449,21 +432,22 @@ useEffect(() => {
                     onChange={handleTableChange}
                 />
             </Card>
+
             <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 10 }}>
                 <Button type="primary" shape="round" icon={<PlusOutlined />} size="large" style={{ boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' }} onClick={handleTambah}>Tambah</Button>
             </div>
-           <TransaksiForm
-  open={isModalOpen}
-  onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
-  onFinish={handleFinishForm}
-  initialValues={editingTransaksi}
-  loading={isSaving}
 
-  // --- TAMBAHKAN PROPS INI ---
-  unpaidJual={unpaidJual}
-  unpaidCetak={unpaidCetak}
-  loadingInvoices={loadingInvoices}
-/>
+            {/* --- Panggilan TransaksiForm Disederhanakan --- */}
+            <TransaksiForm
+                open={isModalOpen}
+                onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
+                initialValues={editingTransaksi}
+                unpaidJual={unpaidJual}
+                unpaidCetak={unpaidCetak}
+                loadingInvoices={loadingInvoices}
+            />
+
+            {/* --- Modal Bukti Transaksi --- */}
             <Modal
                 open={isProofModalOpen}
                 title="Bukti Transaksi"
@@ -519,8 +503,4 @@ useEffect(() => {
 
 const chipStyle = { border: '1px solid #d9d9d9', padding: '4px 10px', borderRadius: '16px', minWidth: '130px', textAlign: 'center' };
 
-
-
-
 export default MutasiPage;
-

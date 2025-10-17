@@ -7,9 +7,11 @@ import { CloseOutlined } from '@ant-design/icons';
 import SideMenu, { NavigationMenu } from './components/layout/SideMenu';
 import MobileHeader from './components/layout/MobileHeader';
 import DashboardPage from './pages/DashboardPage';
-import MutasiPage from './pages/MutasiPage';
+import MutasiPage from './pages/MutasiPage/MutasiPage';
 import HutangPiutangPage from './pages/HutangPiutangPage';
 import DataGeneratorPage from './pages/DataGeneratorPage';
+import BukuPage from './pages/BukuPage/BukuPage';
+import TransaksiJualPage from './pages/BukuPage copy/TransaksiJualPage';
 
 const App = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -26,9 +28,9 @@ const App = () => {
 
   const renderPage = () => {
     switch (currentPage) {
-      case '1': return <DashboardPage />;
+      case '1': return <BukuPage />;
       case '2': return <MutasiPage />;
-      case '3': return <HutangPiutangPage />;
+      case '3': return <TransaksiJualPage />;
       case '4': return <DataGeneratorPage />;
       default: return <MutasiPage />;
     }
