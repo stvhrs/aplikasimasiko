@@ -11,6 +11,8 @@ const MobileHeader = ({ onMenuClick }) => (
     <Button type="text" icon={<MenuOutlined style={{ color: 'white' }} />} onClick={onMenuClick} />
     <Title level={5} style={{ color: 'white', margin: '0 0 0 16px' }}>Mas Iko Finance</Title>
   </Header>
+
+  
 );
 
 export default MobileHeader;

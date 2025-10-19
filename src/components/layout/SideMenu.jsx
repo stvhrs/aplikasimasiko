@@ -28,7 +28,7 @@ export const NavigationMenu = ({ activeKey, onLinkClick }) => {
     >
       <Menu.Item key="/buku" icon={<BookOutlined />}>
         {/* 2. BUNGKUS DENGAN <Link> */}
-        <Link to="/buku">Master Buku</Link>
+        <Link to="/buku">Data Buku</Link>
       </Menu.Item>
       <Menu.Item key="/mutasi" icon={<SwapOutlined />}>
         <Link to="/mutasi">Mutasi</Link>
@@ -37,7 +37,7 @@ export const NavigationMenu = ({ activeKey, onLinkClick }) => {
         <Link to="/transaksi-jual">Transaksi Jual</Link>
       </Menu.Item>
       <Menu.Item key="/pelanggan" icon={<ExperimentOutlined />}>
-        <Link to="/pelanggan">Pelanggan</Link>
+        <Link to="/pelanggan">Data Pelanggan</Link>
       </Menu.Item>
      
     </Menu>

@@ -1,16 +1,17 @@
 // ================================
-// FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx
+// FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx (FIXED)
 // PERUBAHAN:
-// - Mengganti scroll={{ x: 1200 }} menjadi scroll={{ x: 'max-content' }}
-// - Membersihkan semua typo/artifact dari respons sebelumnya.
+// 1. Mengganti 'App.useApp?.() ?? { ... }' menjadi 'App.useApp()'
 // ================================
 
 import React, { useEffect, useState } from 'react';
 import {
     Layout, Card, Spin, Empty, Typography, Table, Input, Row, Col, Statistic, Tag, Button, Modal,
-    Dropdown, Menu, Radio, App
+    Dropdown, Menu, Radio, App // 'App' di sini diperlukan untuk App.useApp()
 } from 'antd';
-import { PlusOutlined, MoreOutlined } from '@ant-design/icons';
+import {
+    PlusOutlined, MoreOutlined, DownloadOutlined, ShareAltOutlined
+} from '@ant-design/icons';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../../api/firebase';
 
@@ -35,7 +36,10 @@ const formatDate = (timestamp) =>
 const normalizeStatus = (s) => (s === 'DP' ? 'Sebagian' : s || 'N/A');
 
 export default function TransaksiJualPage() {
-    const { message } = App.useApp?.() ?? { message: { success: console.log, error: console.error } };
+    // --- PERUBAHAN DI SINI ---
+    // Hapus fallback, karena <AntApp> di App.js sudah menjamin 'message' ada
+    const { message } = App.useApp();
+    // ------------------------
 
     const [allTransaksi, setAllTransaksi] = useState([]);
     const [filteredTransaksi, setFilteredTransaksi] = useState([]);
@@ -59,6 +63,7 @@ export default function TransaksiJualPage() {
     const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
     const [pdfUrl, setPdfUrl] = useState('');
     const [pdfTitle, setPdfTitle] = useState('');
+    const [isPdfLoading, setIsPdfLoading] = useState(false);
 
     // fetch transaksi
     useEffect(() => {
@@ -119,10 +124,18 @@ export default function TransaksiJualPage() {
     const handleOpenDetailModal = (tx) => { setSelectedTransaksi(tx); setIsDetailModalOpen(true); };
     const handleCloseDetailModal = () => { setSelectedTransaksi(null); setIsDetailModalOpen(false); };
 
+    const handleClosePdfModal = () => {
+        setIsPdfModalOpen(false);
+        setIsPdfLoading(false);
+        setPdfUrl('');
+        setPdfTitle('');
+    };
+
     const handleGenerateInvoice = (tx) => {
         setPdfTitle(`Invoice: ${tx.nomorInvoice || tx.id}`);
         const url = generateInvoicePDF(tx);
         setPdfUrl(url);
+        setIsPdfLoading(true);
         setIsPdfModalOpen(true);
     };
     const handleGenerateNota = (tx) => {
@@ -133,8 +146,75 @@ export default function TransaksiJualPage() {
         setPdfTitle(`Nota: ${tx.nomorInvoice || tx.id}`);
         const url = generateNotaPDF(tx);
         setPdfUrl(url);
+        setIsPdfLoading(true);
         setIsPdfModalOpen(true);
     };
+
+    // Handler Download (sekarang aman menggunakan message.loading)
+    const handleDownloadPdf = async () => {
+        if (!pdfUrl) return;
+        message.loading({ content: 'Mempersiapkan download...', key: 'pdfdownload' });
+        try {
+            const response = await fetch(pdfUrl);
+            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
+            const blob = await response.blob();
+            const objectUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            const fileName = `${pdfTitle.replace(/ /g, '_') || 'download'}.pdf`;
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(objectUrl);
+            message.success({ content: 'Download dimulai!', key: 'pdfdownload', duration: 2 });
+        } catch (error) {
+            console.error('Download error:', error);
+            message.error({ content: `Gagal download: ${error.message}`, key: 'pdfdownload', duration: 3 });
+        }
+    };
+
+    // Handler Share (sekarang aman menggunakan message.loading)
+    const handleSharePdf = async () => {
+        if (!navigator.share) {
+            message.error('Web Share API tidak didukung di browser ini.');
+            return;
+        }
+
+        message.loading({ content: 'Mempersiapkan file...', key: 'pdfshare' });
+        try {
+            const response = await fetch(pdfUrl);
+            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
+            const blob = await response.blob();
+            const fileName = `${pdfTitle.replace(/ /g, '_') || 'file'}.pdf`;
+            const file = new File([blob], fileName, { type: 'application/pdf' });
+
+            const shareData = {
+                title: pdfTitle,
+                text: `Berikut adalah file: ${pdfTitle}`,
+                files: [file],
+            };
+
+            if (navigator.canShare && navigator.canShare(shareData)) {
+                await navigator.share(shareData);
+                message.success({ content: 'File berhasil dibagikan!', key: 'pdfshare', duration: 2 });
+            } else {
+                message.warn({ content: 'Berbagi file tidak didukung, membagikan link...', key: 'pdfshare', duration: 2 });
+                await navigator.share({
+                    title: pdfTitle,
+                    url: pdfUrl,
+                });
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error('Share error:', error);
+                message.error({ content: `Gagal membagikan: ${error.message}`, key: 'pdfshare', duration: 3 });
+            } else {
+                message.destroy('pdfshare');
+            }
+        }
+    };
+
 
     const columns = [
         {
@@ -178,7 +258,7 @@ export default function TransaksiJualPage() {
             },
         },
         {
-            title: 'Aksi', key: 'aksi', align: 'center', width: 220, // (fixed: 'right' sudah dihapus)
+            title: 'Aksi', key: 'aksi', align: 'center', width: 220,
             render: (_, record) => {
                 const menu = (
                     <Menu>
@@ -277,7 +357,7 @@ export default function TransaksiJualPage() {
                     <TransaksiJualForm
                         mode={formMode}
                         initialTx={editingTx}
-                        _ bukuList={bukuList}
+                        bukuList={bukuList}
                         pelangganList={pelangganList}
                         onSuccess={handleCloseFormModal}
                     />
@@ -287,10 +367,53 @@ export default function TransaksiJualPage() {
             {/* DETAIL MODAL */}
             <TransaksiJualDetailModal open={isDetailModalOpen} onCancel={handleCloseDetailModal} transaksi={selectedTransaksi} />
 
-            {/* INLINE PDF MODAL (optional viewer) */}
-            <Modal title={pdfTitle} open={isPdfModalOpen} onCancel={() => setIsPdfModalOpen(false)} footer={null} width="90%" style={{ top: 20 }} destroyOnClose>
+            {/* INLINE PDF MODAL (Kode ini tidak berubah, sudah benar) */}
+            <Modal
+                title={pdfTitle}
+                open={isPdfModalOpen}
+                onCancel={handleClosePdfModal}
+                width="90%"
+                style={{ top: 20 }}
+                destroyOnClose
+                footer={[
+                    <Button key="close" onClick={handleClosePdfModal}>
+                        Tutup
+                    </Button>,
+                    navigator.share && (
+                        <Button key="share" icon={<ShareAltOutlined />} onClick={handleSharePdf}>
+                            Share File
+                        </Button>
+                    ),
+                    <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadPdf}>
+                        Download
+                    </Button>
+                ]}
+                bodyStyle={{ padding: 0, height: '75vh', position: 'relative' }}
+            >
+                {isPdfLoading && (
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                        zIndex: 10,
+                    }}>
+                        <Spin size="large" tip="Memuat PDF..." />
+                    </div>
+                )}
+                
                 {pdfUrl ? (
-                    <iframe src={pdfUrl} style={{ width: '100%', height: '75vh', border: 'none' }} title={pdfTitle} />
+                    <iframe
+                        src={pdfUrl}
+                        style={{ width: '100%', height: '100%', border: 'none' }}
+                        title={pdfTitle}
+                        onLoad={() => setIsPdfLoading(false)}
+                    />
                 ) : (
                     <div style={{ textAlign: 'center', padding: 50 }}><Spin /></div>
                 )}
