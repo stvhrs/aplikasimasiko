@@ -8,8 +8,8 @@ import { ref, onValue } from 'firebase/database';
 import { db } from '../../api/firebase'; // Sesuaikan path
 import useDebounce from '../../hooks/useDebounce'; // Sesuaikan path
 
-import BukuForm from './components/BukuForm'; // Kita akan buat file ini
-import StokFormModal from './components/StockFormModal'; // Kita akan buat file ini
+import BukuForm from './components/BukuForm'; // Pastikan file ini ada
+import StokFormModal from './components/StockFormModal'; // Pastikan file ini ada
 
 const { Content } = Layout;
 const { Title } = Typography;
@@ -83,7 +83,8 @@ const BukuPage = () => {
 
     // --- Definisi Kolom Tabel ---
     const columns = useMemo(() => [
-        { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', sorter: (a, b) => a.judul.localeCompare(b.judul), fixed: 'left', width: 250 },
+        // properti 'fixed: left' DIHAPUS dari sini
+        { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', sorter: (a, b) => a.judul.localeCompare(b.judul), width: 250 },
         { title: 'Stok', dataIndex: 'stok', key: 'stok', sorter: (a, b) => a.stok - b.stok, align: 'right', width: 100 },
         { title: 'Mapel/Kategori', dataIndex: 'mapel', key: 'mapel', width: 150 },
         { title: 'Kelas', dataIndex: 'kelas', key: 'kelas', render: (kelas) => kelas || '-', width: 100 },
@@ -95,8 +96,8 @@ const BukuPage = () => {
             title: 'Aksi',
             key: 'aksi',
             align: 'center',
-            fixed: 'right',
             width: 120,
+            // properti 'fixed: right' DIHAPUS dari sini
             render: (_, record) => (
                 <Space size="small">
                     <Tooltip title="Edit Detail Buku">
@@ -133,7 +134,8 @@ const BukuPage = () => {
                     loading={loading}
                     rowKey="id"
                     size="middle"
-                    scroll={{ x: 'max-content' }}
+                    // 'scroll.x' ini tetap penting untuk mengaktifkan scroll horizontal di HP
+                    scroll={{ x: 1320 }} 
                     pagination={{ pageSize: 15, showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total} buku` }}
                     style={{ marginTop: 24 }}
                 />

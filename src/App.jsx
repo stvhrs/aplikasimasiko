@@ -14,7 +14,7 @@ import MobileHeader from './components/layout/MobileHeader';
 // --- Halaman Aplikasi ---
 import BukuPage from './pages/BukuPage/BukuPage';
 import MutasiPage from './pages/MutasiPage/MutasiPage';
-import TransaksiJualPage from './pages/BukuPage copy/TransaksiJualPage'; // Anda menamainya 'BukuPage copy', saya asumsikan ini benar
+import TransaksiJualPage from './pages/TransaksiJualPage/TransaksiJualPage'; // Anda menamainya 'TransaksiJualPage', saya asumsikan ini benar
 import DataGeneratorPage from './pages/DataGeneratorPage';
 
 // --- Halaman Publik (Dari pembahasan sebelumnya) ---
@@ -52,6 +52,7 @@ const MainLayout = () => {
         <SideMenu
           collapsed={collapsed}
           onCollapse={setCollapsed}
+
           activeKey={getActiveKey()}
           // 'onMenuSelect' sudah tidak diperlukan lagi, dihapus
         />

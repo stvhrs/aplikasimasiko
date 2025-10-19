@@ -140,7 +140,6 @@ export default function PelangganPage() {
       title: 'Aksi',
       key: 'aksi',
       width: 190,
-      fixed: 'right',
       render: (_, row) => (
         <Space>
           <Button icon={<EditOutlined />} onClick={() => openEdit(row)}>
