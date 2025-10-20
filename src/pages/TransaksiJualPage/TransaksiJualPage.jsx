@@ -2,9 +2,10 @@
 // FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx
 // PERUBAHAN:
 // 1. Mengganti 'App.useApp?.() ?? { ... }' menjadi 'App.useApp()' (Sudah ada)
-// 2. Mengganti iframe modal PDF dengan @react-pdf-viewer/core
-// 3. Mengubah state dari pdfUrl -> pdfBlob
-// 4. Mengubah handler generate PDF menjadi async untuk membuat blob
+// 2. Mengganti iframe modal PDF dengan @react-pdf-viewer/core (Sudah ada)
+// 3. Mengubah state dari pdfUrl -> pdfBlob (Sudah ada)
+// 4. Mengubah handler generate PDF menjadi async untuk membuat blob (Sudah ada)
+// 5. Menyesuaikan style Modal PDF agar full view / fullscreen di semua perangkat
 // ================================
 
 import React, { useEffect, useState } from 'react';
@@ -388,13 +389,16 @@ export default function TransaksiJualPage() {
             {/* ... (Modal Detail tidak berubah) ... */}
             <TransaksiJualDetailModal open={isDetailModalOpen} onCancel={handleCloseDetailModal} transaksi={selectedTransaksi} />
 
-            {/* --- MODAL PDF DIUBAH (MENGGUNAKAN REACT-PDF-VIEWER) --- */}
+            {/* --- MODAL PDF DIUBAH (STYLE FULLSCREEN) --- */}
             <Modal
                 title={pdfTitle}
                 open={isPdfModalOpen}
                 onCancel={handleClosePdfModal}
-                width="90%"
-                style={{ top: 20 }}
+                
+                // DIUBAH: Style untuk membuatnya full view
+                width="100vw"
+                style={{ top: 0, padding: 0, margin: 0, maxWidth: '100vw' }}
+                
                 destroyOnClose
                 footer={[
                     <Button key="close" onClick={handleClosePdfModal}>
@@ -420,7 +424,9 @@ export default function TransaksiJualPage() {
                         Download
                     </Button>
                 ]}
-                bodyStyle={{ padding: 0, height: '75vh', position: 'relative' }}
+
+                // DIUBAH: Hitung tinggi body = 100vh - tinggi header (55px) - tinggi footer (53px)
+                bodyStyle={{ padding: 0, height: 'calc(100vh - 55px - 53px)', position: 'relative' }}
             >
                 {/* Tampilkan spinner saat blob sedang dibuat */}
                 {isPdfGenerating && (
@@ -444,7 +450,8 @@ export default function TransaksiJualPage() {
                 {!isPdfGenerating && pdfBlob ? (
                     <div style={{ height: '100%', width: '100%', overflow: 'auto' }}>
                         <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-                            <Viewer fileUrl={URL.createObjectURL(pdfBlob)} />
+                            {/* Tambahkan key unik untuk memaksa re-render jika blob berubah */}
+                            <Viewer key={pdfTitle} fileUrl={URL.createObjectURL(pdfBlob)} />
                         </Worker>
                     </div>
                 ) : (
