@@ -1,5 +1,15 @@
+// ================================
+// FILE: TransaksiJualDetailModal.jsx
+// PERUBAHAN:
+// 1. Modal dibuat FULLSCREEN (width="100vw", style, bodyStyle) agar responsive.
+// 2. <Descriptions> dibuat responsive (column={{ xs: 1, sm: 2, ... }}).
+// 3. <Table> "Daftar Item Buku":
+//    - Kolom "Harga Satuan" & "Diskon" disembunyikan di mobile (responsive: ['sm']).
+//    - Ditambahkan `scroll={{ x: 'max-content' }}` sebagai pengaman.
+// ================================
+
 import React, { useState, useEffect } from 'react';
-import { Modal, Descriptions, Table, Typography, Tag, Timeline, Empty } from 'antd';
+import { Modal, Descriptions, Table, Typography, Tag, Timeline, Empty, Button } from 'antd'; // <-- Import Button
 
 const { Title, Text } = Typography;
 
@@ -30,18 +40,21 @@ const formatTimestamp = (timestamp) => {
 };
 // -------------------------
 
-// --- Kolom untuk tabel item buku (Tidak berubah) ---
+// --- Kolom untuk tabel item buku (DIUBAH AGAR RESPONSIVE) ---
 const itemColumns = [
     {
         title: 'Judul Buku',
         dataIndex: 'judulBuku',
         key: 'judulBuku',
+        // 'fixed: 'left'' bisa ditambahkan jika tabel sangat lebar
+        // fixed: 'left', 
     },
     {
         title: 'Qty',
         dataIndex: 'jumlah',
         key: 'jumlah',
         align: 'center',
+        width: 60, // Beri lebar tetap agar rapi
     },
     {
         title: 'Harga Satuan',
@@ -49,6 +62,7 @@ const itemColumns = [
         key: 'hargaSatuan',
         align: 'right',
         render: (val) => formatCurrency(val),
+        responsive: ['sm'], // <-- HANYA TAMPIL di layar 'sm' (tablet) ke atas
     },
     {
         title: 'Diskon',
@@ -56,11 +70,14 @@ const itemColumns = [
         key: 'diskonPersen',
         align: 'center',
         render: (val) => `${val || 0}%`,
+        width: 80, // Beri lebar tetap
+        responsive: ['sm'], // <-- HANYA TAMPIL di layar 'sm' (tablet) ke atas
     },
     {
         title: 'Subtotal',
         key: 'subtotal',
         align: 'right',
+        // fixed: 'right', // Bisa ditambahkan jika tabel sangat lebar
         render: (text, record) => {
             const { jumlah = 0, hargaSatuan = 0, diskonPersen = 0 } = record;
             const subtotal = jumlah * (hargaSatuan * (1 - diskonPersen / 100));
@@ -70,15 +87,19 @@ const itemColumns = [
         }
     }
 ];
+// -----------------------------------------------------------
 
 const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
     const [historiArray, setHistoriArray] = useState([]);
 
     useEffect(() => {
-        // --- PERBAIKAN: Menggunakan 'riwayatPembayaran' dan 'tanggal' ---
         if (open && transaksi && transaksi.riwayatPembayaran) {
-            const arr = Object.values(transaksi.riwayatPembayaran)
-                .sort((a, b) => b.tanggal - a.tanggal); // Urutkan berdasarkan tanggal
+            // Cek jika riwayatPembayaran adalah Object, ubah jadi Array
+            const rawRiwayat = typeof transaksi.riwayatPembayaran.forEach === 'function' 
+                ? transaksi.riwayatPembayaran // Sudah array
+                : Object.values(transaksi.riwayatPembayaran); // Masih object
+
+            const arr = rawRiwayat.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0)); // Urutkan terbaru di atas
             setHistoriArray(arr);
         } else {
             setHistoriArray([]);
@@ -102,7 +123,7 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
     const getStatusColor = (status) => {
         if (status === 'Lunas') return 'green';
         if (status === 'Belum Bayar') return 'red';
-        if (status === 'Sebagian' || status === 'DP') return 'orange'; // <-- Ditambahkan 'DP'
+        if (status === 'Sebagian' || status === 'DP') return 'orange';
         return 'default';
     };
 
@@ -111,23 +132,30 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
             open={open}
             onCancel={onCancel}
             title={`Detail Transaksi: ${nomorInvoice || ''}`}
-            width={900}
+            
+            // --- PERUBAHAN 1: Modal Fullscreen ---
+            width="100vw"
+            style={{ top: 0, padding: 0, margin: 0, maxWidth: '100vw' }}
+            // Body dibuat scrollable
+            bodyStyle={{ padding: '24px', height: 'calc(100vh - 55px - 53px)', overflowY: 'auto' }}
+            
             footer={[
-                <button key="close" onClick={onCancel} className="ant-btn ant-btn-default">
+                // Ganti <button> biasa menjadi <Button> Ant Design
+                <Button key="close" type="primary" onClick={onCancel}>
                     Tutup
-                </button>
+                </Button>
             ]}
         >
-            {/* --- Info Utama & Keuangan (Tidak berubah) --- */}
-            <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+            {/* --- PERUBAHAN 2: Descriptions Responsive --- */}
+            <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 16 }}>
                 <Descriptions.Item label="Pelanggan">{namaPelanggan}</Descriptions.Item>
                 <Descriptions.Item label="Tanggal">{formatDate(tanggal)}</Descriptions.Item>
-                <Descriptions.Item label="Status Bayar">
+                <Descriptions.Item label="Status Bayar" span={2}>
                     <Tag color={getStatusColor(statusPembayaran)}>{statusPembayaran}</Tag>
                 </Descriptions.Item>
             </Descriptions>
 
-            <Descriptions bordered size="small" column={3} style={{ marginBottom: 24 }}>
+            <Descriptions bordered size="small" column={{ xs: 1, sm: 3 }} style={{ marginBottom: 24 }}>
                 <Descriptions.Item label="Total Tagihan">
                     <Text strong style={{ fontSize: 16 }}>{formatCurrency(totalTagihan)}</Text>
                 </Descriptions.Item>
@@ -141,7 +169,7 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
                 </Descriptions.Item>
             </Descriptions>
             
-            {/* --- BLOK RIWAYAT PEMBAYARAN --- */}
+            {/* --- BLOK RIWAYAT PEMBAYARAN (Layout sudah OK) --- */}
             <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>
                 Riwayat Pembayaran
             </Title>
@@ -164,12 +192,10 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
                                 </Text>
                                 <div>
                                     <Text type="secondary">
-                                        {/* Menggunakan 'mutasiId' sebagai referensi jika ada */}
-                                        {item.keterangan || item.metode || `Ref: ${item.mutasiId.slice(-6)}`} 
+                                        {item.keterangan || item.metode || (item.mutasiId ? `Ref: ${item.mutasiId.slice(-6)}` : 'Pembayaran')} 
                                     </Text>
                                 </div>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {/* --- PERBAIKAN: Menggunakan 'item.tanggal' --- */}
                                     {formatTimestamp(item.tanggal)}
                                 </Text>
                             </Timeline.Item>
@@ -180,15 +206,18 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
                 )}
             </div>
 
-            {/* --- Daftar Item (Tidak berubah) --- */}
+            {/* --- PERUBAHAN 3: Table Responsive --- */}
             <Title level={5}>Daftar Item Buku</Title>
             <Table
                 columns={itemColumns}
-                dataSource={items || []}
-                rowKey={(item, index) => item.idBuku || index} // Pengaman jika idBuku duplikat
+                dataSource={items || []} // Pengaman error "rawData.some"
+                rowKey={(item, index) => item.idBuku || index}
                 pagination={false}
                 bordered
                 size="small"
+                // Tambahkan scroll={{ x: ... }} sebagai PENGAMAN
+                // jika judul buku terlalu panjang
+                scroll={{ x: 'max-content' }}
             />
         </Modal>
     );

@@ -1,25 +1,47 @@
+// ================================
+// FILE: src/pages/buku/components/BukuForm.jsx
+// PERUBAHAN:
+// 1. Modal dibuat FULLSCREEN (width="100vw", style, bodyStyle) agar responsive.
+// 2. Semua <Col> di dalam <Row> diubah dari `span={X}` menjadi props responsive
+//    (cth: `xs={24} md={X}`) agar form menumpuk (stacking) di mobile.
+// 3. Kolom Harga & Diskon (4 kolom) dibuat `xs={12}` agar muat 2 per baris di mobile.
+// 4. Menambahkan helper `rupiahFormatter` & `rupiahParser` untuk input harga.
+// ================================
+
 import React, { useState, useEffect } from 'react';
 import {
-    Modal, Form, Input, InputNumber, Select, Row, Col, message, Button, Typography // <-- PERUBAHAN 1: Tambahkan Typography
+    Modal, Form, Input, InputNumber, Select, Row, Col, message, Button, Typography
 } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { db } from '../../../api/firebase';
 import { ref, push, update, remove } from 'firebase/database';
 
 const { Option } = Select;
-const { Title } = Typography; // <-- PERUBAHAN 2: Ambil Title dari Typography
+const { Title } = Typography;
 
 const TIPE_BUKU_OPTIONS = ['HET', 'BTP', 'BUKU UTAMA', 'Referensi', 'Fiksi'];
-// GANTI INI:
-
-// MENJADI INI:
 const KELAS_OPTIONS = ['PAUD', 'TK A', 'TK B', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'Umum'];
+
+// --- Helper Rupiah (dicopy dari form lain) ---
+const rupiahFormatter = (v) =>
+    new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(Number(v || 0));
+
+const rupiahParser = (v) => {
+    const digits = String(v || '0').replace(/[^\d]/g, '');
+    return Number(digits || 0);
+};
+// ------------------------------------------
+
 const BukuForm = ({ open, onCancel, initialValues }) => {
     const [form] = Form.useForm();
     const [isSaving, setIsSaving] = useState(false);
     const [modal, contextHolder] = Modal.useModal();
     
-    // <-- PERUBAHAN 3: Logika isEditing dibuat lebih aman
     const isEditing = !!(initialValues && initialValues.id); 
 
     useEffect(() => {
@@ -44,7 +66,6 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                 message.success({ content: 'Buku berhasil diperbarui', key: 'saving' });
             } else {
                 // --- MODE TAMBAH BARU ---
-                // Inisialisasi stok awal dan histori
                 const newBukuData = {
                     ...values,
                     stok: 0,
@@ -93,7 +114,13 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
             onOk={form.submit}
             confirmLoading={isSaving}
             destroyOnClose
-            width={800}
+            
+            // --- PERUBAHAN 1: Modal Fullscreen ---
+            width="100vw"
+            style={{ top: 0, padding: 0, margin: 0, maxWidth: '100vw' }}
+            // Body dibuat scrollable
+            bodyStyle={{ padding: '24px', height: 'calc(100vh - 55px - 53px)', overflowY: 'auto' }}
+
             footer={[
                 contextHolder,
                 isEditing && (
@@ -117,54 +144,90 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
             ]}
         >
             <Form form={form} layout="vertical" onFinish={handleFinish}>
+                
+                {/* --- PERUBAHAN 2: Grid Responsive (xs={24} md={...}) --- */}
                 <Row gutter={16}>
-                    <Col span={18}><Form.Item name="judul" label="Judul Buku" rules={[{ required: true }]}><Input /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="tahun" label="Tahun Terbit"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
+                    <Col xs={24} md={18}><Form.Item name="judul" label="Judul Buku" rules={[{ required: true }]}><Input /></Form.Item></Col>
+                    <Col xs={24} md={6}><Form.Item name="tahun" label="Tahun Terbit"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
                 </Row>
                 <Row gutter={16}>
-                    <Col span={12}><Form.Item name="penerbit" label="Penerbit"><Input /></Form.Item></Col>
-                    <Col span={12}><Form.Item name="spekKertas" label="Spesifikasi Kertas"><Input.TextArea rows={1} /></Form.Item></Col>
+                    <Col xs={24} md={12}><Form.Item name="penerbit" label="Penerbit"><Input /></Form.Item></Col>
+                    <Col xs={24} md={12}><Form.Item name="spekKertas" label="Spesifikasi Kertas"><Input.TextArea rows={1} /></Form.Item></Col>
                 </Row>
                 <Row gutter={16}>
-                    <Col span={8}>
+                    <Col xs={24} md={8}>
                         <Form.Item name="tipeBuku" label="Tipe Buku">
                             <Select placeholder="Pilih tipe">
                                 {TIPE_BUKU_OPTIONS.map(tipe => <Option key={tipe} value={tipe}>{tipe}</Option>)}
                             </Select>
                         </Form.Item>
                     </Col>
-                    <Col span={8}>
+                    <Col xs={24} md={8}>
                         <Form.Item name="mapel" label="Mapel / Kategori">
                             <Input placeholder="cth: IPA, Fiksi, Referensi" />
                         </Form.Item>
                     </Col>
-                    <Col span={8}>
+                    <Col xs={24} md={8}>
                         <Form.Item name="kelas" label="Kelas">
                             <Select placeholder="Pilih kelas" allowClear>
                             {KELAS_OPTIONS.map(k => (
-    <Option key={k} value={k}>
-        {typeof k === 'number' ? `Kelas ${k}` : k}
-    </Option>
-))}
+                                <Option key={k} value={k}>
+                                    {typeof k === 'number' ? `Kelas ${k}` : k}
+                                </Option>
+                            ))}
                             </Select>
                         </Form.Item>
                     </Col>
                 </Row>
 
                 <Title level={5} style={{ marginTop: 16 }}>Harga Jual</Title>
+                
+                {/* --- PERUBAHAN 3: Grid Responsive (xs={12} md={6}) --- */}
                 <Row gutter={16}>
-                    <Col span={6}><Form.Item name="hargaJual" label="Harga Jual (Umum)"><InputNumber prefix="Rp " style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="diskonJual" label="Diskon (%)"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="hargaJualSpesial" label="Harga Jual (Spesial)"><InputNumber prefix="Rp " style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="diskonJualSpesial" label="Diskon Spesial (%)"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="hargaJual" label="Harga (Umum)">
+                            <InputNumber formatter={rupiahFormatter} parser={rupiahParser} style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="diskonJual" label="Diskon (%)">
+                            <InputNumber suffix="%" style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="hargaJualSpesial" label="Harga (Spesial)">
+                            <InputNumber formatter={rupiahFormatter} parser={rupiahParser} style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="diskonJualSpesial" label="Diskon Spesial (%)">
+                            <InputNumber suffix="%" style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
                 </Row>
                 
                 <Title level={5} style={{ marginTop: 16 }}>Harga Cetak</Title>
                 <Row gutter={16}>
-                    <Col span={6}><Form.Item name="hargaCetak" label="Harga Cetak (Umum)"><InputNumber prefix="Rp " style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="diskonCetak" label="Diskon (%)"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="hargaCetakSpesial" label="Harga Cetak (Spesial)"><InputNumber prefix="Rp " style={{ width: '100%' }} /></Form.Item></Col>
-                    <Col span={6}><Form.Item name="diskonCetakSpesial" label="Diskon Spesial (%)"><InputNumber style={{ width: '100%' }} /></Form.Item></Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="hargaCetak" label="Harga (Umum)">
+                            <InputNumber formatter={rupiahFormatter} parser={rupiahParser} style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="diskonCetak" label="Diskon (%)">
+                            <InputNumber suffix="%" style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="hargaCetakSpesial" label="Harga (Spesial)">
+                            <InputNumber formatter={rupiahFormatter} parser={rupiahParser} style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={12} md={6}>
+                        <Form.Item name="diskonCetakSpesial" label="Diskon Spesial (%)">
+                            <InputNumber suffix="%" style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Col>
                 </Row>
             </Form>
         </Modal>
