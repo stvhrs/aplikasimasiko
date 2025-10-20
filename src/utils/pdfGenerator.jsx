@@ -1,18 +1,7 @@
-// ================================
-// FILE: src/utils/pdfGenerator.js
-// Fixes:
-// - Import benar: default jsPDF + default autoTable
-// - Pakai autoTable(doc, options) (bukan doc.autoTable)
-// - Satu instance doc per PDF; fungsi preview & download konsisten
-// - Base URL https
-// ================================
-
+// src/utils/pdfGenerator.js
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// import logo from '../assets/logo.png'; // optional
-
-// --- Informasi Perusahaan ---
 const companyInfo = {
   nama: 'CV Aplikasi Mas Iko',
   alamat: 'Gemolong, Sragen, Jawa Tengah',
@@ -22,7 +11,6 @@ const companyInfo = {
 
 const baseURL = 'https://aplikasimasiko.web.app/transaksijualbuku';
 
-// --- Helper ---
 const formatCurrency = (value) =>
   new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -37,7 +25,6 @@ const formatDate = (timestamp) =>
     year: 'numeric',
   });
 
-// --- Syarat & Ketentuan ---
 const terms = [
   'Barang yang sudah dibeli tidak dapat dikembalikan atau ditukar.',
   'Pembayaran dianggap lunas apabila dana sudah masuk ke rekening kami.',
@@ -45,31 +32,24 @@ const terms = [
   'Harap periksa kembali barang saat diterima. Komplain maks. 1x24 jam.',
 ];
 
-// --- Core generator: return jsPDF instance ---
 const buildDoc = (transaksi, type) => {
   const doc = new jsPDF();
   const isInvoice = type === 'invoice';
   const title = isInvoice ? 'INVOICE' : 'NOTA PEMBAYARAN';
   const link = `${baseURL}/${isInvoice ? 'invoice' : 'nota'}/${transaksi.id}`;
 
-  // if (logo) doc.addImage(logo, 'PNG', 14, 12, 30, 15);
-
-  // Header Perusahaan
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.text(companyInfo.nama, 14, 20);
-
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text(companyInfo.alamat, 14, 25);
   doc.text(`HP: ${companyInfo.hp}`, 14, 30);
 
-  // Judul
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
   doc.text(title, 200, 20, { align: 'right' });
 
-  // Info transaksi
   doc.setLineWidth(0.5);
   doc.line(14, 35, 200, 35);
 
@@ -89,7 +69,6 @@ const buildDoc = (transaksi, type) => {
   doc.setFont('helvetica', 'normal');
   doc.text(formatDate(transaksi.tanggal), 155, 47);
 
-  // Tabel item
   const head = [['No', 'Judul Buku', 'Qty', 'Harga Satuan', 'Diskon', 'Subtotal']];
   let totalBuku = 0;
   const body = (transaksi.items || []).map((item, i) => {
@@ -98,14 +77,7 @@ const buildDoc = (transaksi, type) => {
     const disc = Number(item.diskonPersen || 0);
     const subtotal = qty * (hs * (1 - disc / 100));
     totalBuku += qty;
-    return [
-      i + 1,
-      item.judulBuku || '-',
-      qty,
-      formatCurrency(hs),
-      `${disc}%`,
-      formatCurrency(subtotal),
-    ];
+    return [i + 1, item.judulBuku || '-', qty, formatCurrency(hs), `${disc}%`, formatCurrency(subtotal)];
   });
 
   autoTable(doc, {
@@ -115,20 +87,15 @@ const buildDoc = (transaksi, type) => {
     theme: 'grid',
     headStyles: { fillColor: [22, 160, 133], halign: 'center' },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 }, // No
-      1: { cellWidth: 70 },                    // Judul
-      2: { halign: 'center', cellWidth: 20 },  // Qty
-      3: { halign: 'right', cellWidth: 35 },   // Harga
-      4: { halign: 'center', cellWidth: 25 },  // Diskon
-      5: { halign: 'right', cellWidth: 35 },   // Subtotal
-    },
-    didDrawPage: (data) => {
-      doc.setFontSize(8);
-      doc.text(`Halaman ${doc.internal.getNumberOfPages()}`, data.settings.margin.left, 287);
+      0: { halign: 'center', cellWidth: 10 },
+      1: { cellWidth: 70 },
+      2: { halign: 'center', cellWidth: 20 },
+      3: { halign: 'right', cellWidth: 35 },
+      4: { halign: 'center', cellWidth: 25 },
+      5: { halign: 'right', cellWidth: 35 },
     },
   });
 
-  // Total & pembayaran
   const finalY = (doc.lastAutoTable?.finalY || 55) + 10;
   const sisaTagihan = (transaksi.totalTagihan || 0) - (transaksi.jumlahTerbayar || 0);
 
@@ -153,7 +120,6 @@ const buildDoc = (transaksi, type) => {
     doc.text(formatCurrency(sisaTagihan), 200, finalY + 14, { align: 'right' });
   }
 
-  // Info pembayaran & TnC
   const paymentY = finalY + (isInvoice ? 10 : 25);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -175,7 +141,6 @@ const buildDoc = (transaksi, type) => {
     doc.setTextColor(0, 0, 0);
   }
 
-  // Footer link
   doc.setFontSize(8);
   doc.setTextColor(0, 0, 255);
   const linkLabel = 'Lihat dokumen ini secara online:';
@@ -185,16 +150,8 @@ const buildDoc = (transaksi, type) => {
   return doc;
 };
 
-// --- API untuk preview (iframe) ---
 export const generateInvoicePDF = (transaksi) =>
   buildDoc(transaksi, 'invoice').output('datauristring');
 
 export const generateNotaPDF = (transaksi) =>
   buildDoc(transaksi, 'nota').output('datauristring');
-
-// --- API untuk download langsung ---
-export const downloadInvoicePDF = (transaksi) =>
-  buildDoc(transaksi, 'invoice').save(`${transaksi.id || 'invoice'}.pdf`);
-
-export const downloadNotaPDF = (transaksi) =>
-  buildDoc(transaksi, 'nota').save(`${transaksi.id || 'nota'}.pdf`);

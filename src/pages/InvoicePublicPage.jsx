@@ -1,13 +1,15 @@
 // src/pages/InvoicePublicPage.jsx
-// Versi bersih tanpa karakter error
+// Versi: react-pdf viewer + Firebase + blob generator
 
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ref, get } from 'firebase/database';
-import { db } from '../api/firebase'; // Sesuaikan path
-import { generateInvoicePDF } from '../utils/pdfGenerator'; // Pastikan ini 'generate' (mengembalikan URL)
+import { db } from '../api/firebase';
+import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { Layout, Spin, Button, App, Result, Space, Typography } from 'antd';
 import { DownloadOutlined, ShareAltOutlined } from '@ant-design/icons';
+import { Worker, Viewer } from '@react-pdf-viewer/core';
+import '@react-pdf-viewer/core/lib/styles/index.css';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -16,40 +18,34 @@ const InvoicePublicPage = () => {
     const { id } = useParams();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [pdfUrl, setPdfUrl] = useState(''); // State untuk menampung URL PDF
-    const [transaksi, setTransaksi] = useState(null); // State untuk data transaksi (untuk judul/share)
-    const { message } = App.useApp(); // Gunakan 'message' dari AntD
+    const [pdfBlob, setPdfBlob] = useState(null);
+    const [transaksi, setTransaksi] = useState(null);
+    const { message } = App.useApp();
 
     useEffect(() => {
-        if (!id) {
-            setError("ID Transaksi tidak ditemukan.");
-            setLoading(false);
-            return;
-        }
-
         const fetchAndGenerate = async () => {
-            setLoading(true);
-            setError(null);
             try {
+                if (!id || typeof id !== 'string') {
+                    throw new Error(`ID tidak valid: ${id}`);
+                }
+
+                setLoading(true);
                 const txRef = ref(db, `transaksiJualBuku/${id}`);
                 const snapshot = await get(txRef);
-                
-                if (snapshot.exists()) {
-                    const txData = { id: snapshot.key, ...snapshot.val() };
-                    setTransaksi(txData); // Simpan data transaksi
 
-                    // Panggil fungsi yang mengembalikan URL
-                    const url = generateInvoicePDF(txData);
-                    setPdfUrl(url); // Simpan URL ke state
+                if (!snapshot.exists()) throw new Error('Transaksi tidak ditemukan');
 
-                    setLoading(false);
-                } else {
-                    setError("Transaksi tidak ditemukan.");
-                    setLoading(false);
-                }
+                const txData = { id: snapshot.key, ...snapshot.val() };
+                setTransaksi(txData);
+
+                // Generate data URI lalu ubah ke blob
+                const dataUri = await generateInvoicePDF(txData);
+                const blob = await fetch(dataUri).then((r) => r.blob());
+                setPdfBlob(blob);
             } catch (err) {
-                console.error(err);
-                setError(err.message || 'Gagal memuat data');
+                console.error('Invoice load error:', err);
+                setError(err.message);
+            } finally {
                 setLoading(false);
             }
         };
@@ -57,28 +53,21 @@ const InvoicePublicPage = () => {
         fetchAndGenerate();
     }, [id]);
 
-    // Helper untuk mendapatkan nama file
-    const getPdfTitle = () => {
-        if (!transaksi) return 'invoice.pdf';
-        return `Invoice_${transaksi.nomorInvoice || transaksi.id}.pdf`;
-    };
+    const getPdfTitle = () =>
+        transaksi ? `Invoice_${transaksi.nomorInvoice || transaksi.id}.pdf` : 'invoice.pdf';
 
-    // --- HANDLER UNTUK DOWNLOAD ---
     const handleDownloadPdf = async () => {
-        if (!pdfUrl) return;
+        if (!pdfBlob) return;
         message.loading({ content: 'Mempersiapkan download...', key: 'pdfdownload' });
         try {
-            const response = await fetch(pdfUrl);
-            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
-            const blob = await response.blob();
-            const objectUrl = window.URL.createObjectURL(blob);
+            const url = URL.createObjectURL(pdfBlob);
             const link = document.createElement('a');
-            link.href = objectUrl;
+            link.href = url;
             link.setAttribute('download', getPdfTitle());
             document.body.appendChild(link);
             link.click();
-            link.parentNode.removeChild(link);
-            window.URL.revokeObjectURL(objectUrl);
+            link.remove();
+            URL.revokeObjectURL(url);
             message.success({ content: 'Download dimulai!', key: 'pdfdownload', duration: 2 });
         } catch (error) {
             console.error('Download error:', error);
@@ -86,20 +75,13 @@ const InvoicePublicPage = () => {
         }
     };
 
-    // --- HANDLER UNTUK SHARE FILE ---
     const handleSharePdf = async () => {
         if (!navigator.share) {
             message.error('Web Share API tidak didukung di browser ini.');
             return;
         }
-        message.loading({ content: 'Mempersiapkan file...', key: 'pdfshare' });
         try {
-            const response = await fetch(pdfUrl);
-            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
-            const blob = await response.blob();
-            const fileName = getPdfTitle();
-            const file = new File([blob], fileName, { type: 'application/pdf' });
-
+            const file = new File([pdfBlob], getPdfTitle(), { type: 'application/pdf' });
             const shareData = {
                 title: `Invoice ${transaksi?.nomorInvoice || id}`,
                 text: `Berikut adalah invoice untuk ${transaksi?.namaPelanggan || 'pelanggan'}`,
@@ -108,46 +90,47 @@ const InvoicePublicPage = () => {
 
             if (navigator.canShare && navigator.canShare(shareData)) {
                 await navigator.share(shareData);
-                message.success({ content: 'File berhasil dibagikan!', key: 'pdfshare', duration: 2 });
+                message.success('File berhasil dibagikan!');
             } else {
-                // Fallback jika tidak bisa share file, share link saja
                 await navigator.share({
                     title: `Invoice ${transaksi?.nomorInvoice || id}`,
-                    url: window.location.href, // Share link halaman ini
+                    url: window.location.href,
                 });
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Share error:', error);
-                message.error({ content: `Gagal membagikan: ${error.message}`, key: 'pdfshare', duration: 3 });
-            } else {
-                message.destroy('pdfshare');
+                message.error(`Gagal membagikan: ${error.message}`);
             }
         }
     };
 
-    // --- TAMPILAN UI BARU ---
     return (
         <Layout style={{ minHeight: '100vh', backgroundColor: '#f0f2f5' }}>
-            <Header style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: 'white',
-                borderBottom: '1px solid #f0f0f0',
-                padding: '0 24px',
-                position: 'fixed', // Header tetap di atas
-                width: '100%',
-                zIndex: 10
-            }}>
-                <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Header
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'white',
+                    borderBottom: '1px solid #f0f0f0',
+                    padding: '0 24px',
+                    position: 'fixed',
+                    width: '100%',
+                    zIndex: 10,
+                }}
+            >
+                <Title
+                    level={4}
+                    style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
                     {loading ? 'Memuat Invoice...' : `Invoice: ${transaksi?.nomorInvoice || id}`}
                 </Title>
                 <Space>
                     <Button
                         icon={<ShareAltOutlined />}
                         onClick={handleSharePdf}
-                        disabled={loading || !!error || !navigator.share}
+                        disabled={loading || !!error || !pdfBlob}
                     >
                         Share
                     </Button>
@@ -155,41 +138,59 @@ const InvoicePublicPage = () => {
                         type="primary"
                         icon={<DownloadOutlined />}
                         onClick={handleDownloadPdf}
-                        disabled={loading || !!error}
+                        disabled={loading || !!error || !pdfBlob}
                     >
                         Download
                     </Button>
                 </Space>
             </Header>
-            <Content style={{
-                // Beri padding atas seukuran header
-                paddingTop: '64px',
-                // Tinggi 100% layar
-                height: '100vh',
-                display: 'flex',
-                flexDirection: 'column'
-            }}>
+
+            <Content
+                style={{
+                    paddingTop: '64px',
+                    height: '100vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                }}
+            >
                 {loading && (
-                    <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div
+                        style={{
+                            flexGrow: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
                         <Spin size="large" tip="Mempersiapkan invoice..." />
                     </div>
                 )}
+
                 {error && (
-                    <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Result
-                            status="error"
-                            title="Gagal Memuat Invoice"
-                            subTitle={error}
-                        />
+                    <div
+                        style={{
+                            flexGrow: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        <Result status="error" title="Gagal Memuat Invoice" subTitle={error} />
                     </div>
                 )}
-                {!loading && !error && pdfUrl && (
-                    // Iframe mengisi sisa ruang
-                    <iframe
-                        src={pdfUrl}
-                        style={{ width: '100%', height: '100%', border: 'none' }}
-                        title="Preview Invoice"
-                    />
+
+                {!loading && !error && pdfBlob && (
+                    <div
+                        style={{
+                            flexGrow: 1,
+                            overflow: 'auto',
+                            backgroundColor: '#f0f2f5',
+                        }}
+                    >
+                        <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+                            <Viewer fileUrl={URL.createObjectURL(pdfBlob)} />
+                        </Worker>
+                    </div>
                 )}
             </Content>
         </Layout>

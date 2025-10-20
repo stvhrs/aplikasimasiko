@@ -1,19 +1,27 @@
 // ================================
-// FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx (FIXED)
+// FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx
 // PERUBAHAN:
-// 1. Mengganti 'App.useApp?.() ?? { ... }' menjadi 'App.useApp()'
+// 1. Mengganti 'App.useApp?.() ?? { ... }' menjadi 'App.useApp()' (Sudah ada)
+// 2. Mengganti iframe modal PDF dengan @react-pdf-viewer/core
+// 3. Mengubah state dari pdfUrl -> pdfBlob
+// 4. Mengubah handler generate PDF menjadi async untuk membuat blob
 // ================================
 
 import React, { useEffect, useState } from 'react';
 import {
     Layout, Card, Spin, Empty, Typography, Table, Input, Row, Col, Statistic, Tag, Button, Modal,
-    Dropdown, Menu, Radio, App // 'App' di sini diperlukan untuk App.useApp()
+    Dropdown, Menu, Radio, App
 } from 'antd';
 import {
     PlusOutlined, MoreOutlined, DownloadOutlined, ShareAltOutlined
 } from '@ant-design/icons';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../../api/firebase';
+
+// --- Import untuk PDF Viewer ---
+import { Worker, Viewer } from '@react-pdf-viewer/core';
+import '@react-pdf-viewer/core/lib/styles/index.css';
+// ------------------------------
 
 import TransaksiJualForm from './components/TransaksiJualForm';
 import TransaksiJualDetailModal from './components/TransaksiJualDetailModal';
@@ -36,10 +44,7 @@ const formatDate = (timestamp) =>
 const normalizeStatus = (s) => (s === 'DP' ? 'Sebagian' : s || 'N/A');
 
 export default function TransaksiJualPage() {
-    // --- PERUBAHAN DI SINI ---
-    // Hapus fallback, karena <AntApp> di App.js sudah menjamin 'message' ada
     const { message } = App.useApp();
-    // ------------------------
 
     const [allTransaksi, setAllTransaksi] = useState([]);
     const [filteredTransaksi, setFilteredTransaksi] = useState([]);
@@ -60,10 +65,12 @@ export default function TransaksiJualPage() {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [selectedTransaksi, setSelectedTransaksi] = useState(null);
 
+    // --- State PDF Modal Diubah ---
     const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
-    const [pdfUrl, setPdfUrl] = useState('');
+    const [pdfBlob, setPdfBlob] = useState(null); // Ganti dari pdfUrl
     const [pdfTitle, setPdfTitle] = useState('');
-    const [isPdfLoading, setIsPdfLoading] = useState(false);
+    const [isPdfGenerating, setIsPdfGenerating] = useState(false); // Ganti dari isPdfLoading
+    // -----------------------------
 
     // fetch transaksi
     useEffect(() => {
@@ -124,49 +131,71 @@ export default function TransaksiJualPage() {
     const handleOpenDetailModal = (tx) => { setSelectedTransaksi(tx); setIsDetailModalOpen(true); };
     const handleCloseDetailModal = () => { setSelectedTransaksi(null); setIsDetailModalOpen(false); };
 
+    // --- Handler PDF Modal Diubah ---
     const handleClosePdfModal = () => {
         setIsPdfModalOpen(false);
-        setIsPdfLoading(false);
-        setPdfUrl('');
+        setIsPdfGenerating(false);
+        setPdfBlob(null); // Ganti ke blob
         setPdfTitle('');
     };
 
-    const handleGenerateInvoice = (tx) => {
+    // --- Handler Generate PDF Diubah (Async + Blob) ---
+    const handleGenerateInvoice = async (tx) => {
         setPdfTitle(`Invoice: ${tx.nomorInvoice || tx.id}`);
-        const url = generateInvoicePDF(tx);
-        setPdfUrl(url);
-        setIsPdfLoading(true);
-        setIsPdfModalOpen(true);
+        setIsPdfGenerating(true);
+        setIsPdfModalOpen(true); // Buka modal untuk tampilkan spinner
+        setPdfBlob(null); // Kosongkan blob lama
+
+        try {
+            const dataUri = generateInvoicePDF(tx); // Asumsi ini cepat (jsPDF)
+            const blob = await fetch(dataUri).then((r) => r.blob());
+            setPdfBlob(blob);
+        } catch (err) {
+            console.error("Gagal generate invoice PDF:", err);
+            message.error('Gagal membuat file PDF invoice.');
+            setIsPdfModalOpen(false); // Tutup modal jika gagal
+        } finally {
+            setIsPdfGenerating(false); // Sembunyikan spinner
+        }
     };
-    const handleGenerateNota = (tx) => {
+
+    const handleGenerateNota = async (tx) => {
         if (!['DP', 'Sebagian', 'Lunas'].includes(tx?.statusPembayaran)) {
             message?.error('Nota pembayaran hanya untuk transaksi berstatus DP / Sebagian / Lunas');
             return;
         }
         setPdfTitle(`Nota: ${tx.nomorInvoice || tx.id}`);
-        const url = generateNotaPDF(tx);
-        setPdfUrl(url);
-        setIsPdfLoading(true);
+        setIsPdfGenerating(true);
         setIsPdfModalOpen(true);
+        setPdfBlob(null);
+
+        try {
+            const dataUri = generateNotaPDF(tx);
+            const blob = await fetch(dataUri).then((r) => r.blob());
+            setPdfBlob(blob);
+        } catch (err) {
+            console.error("Gagal generate nota PDF:", err);
+            message.error('Gagal membuat file PDF nota.');
+            setIsPdfModalOpen(false);
+        } finally {
+            setIsPdfGenerating(false);
+        }
     };
 
-    // Handler Download (sekarang aman menggunakan message.loading)
+    // --- Handler Download Diubah (Langsung pakai Blob) ---
     const handleDownloadPdf = async () => {
-        if (!pdfUrl) return;
+        if (!pdfBlob) return;
         message.loading({ content: 'Mempersiapkan download...', key: 'pdfdownload' });
         try {
-            const response = await fetch(pdfUrl);
-            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
-            const blob = await response.blob();
-            const objectUrl = window.URL.createObjectURL(blob);
+            const url = URL.createObjectURL(pdfBlob);
             const link = document.createElement('a');
-            link.href = objectUrl;
+            link.href = url;
             const fileName = `${pdfTitle.replace(/ /g, '_') || 'download'}.pdf`;
             link.setAttribute('download', fileName);
             document.body.appendChild(link);
             link.click();
-            link.parentNode.removeChild(link);
-            window.URL.revokeObjectURL(objectUrl);
+            link.remove();
+            URL.revokeObjectURL(url);
             message.success({ content: 'Download dimulai!', key: 'pdfdownload', duration: 2 });
         } catch (error) {
             console.error('Download error:', error);
@@ -174,49 +203,41 @@ export default function TransaksiJualPage() {
         }
     };
 
-    // Handler Share (sekarang aman menggunakan message.loading)
+    // --- Handler Share Diubah (Langsung pakai Blob) ---
     const handleSharePdf = async () => {
         if (!navigator.share) {
             message.error('Web Share API tidak didukung di browser ini.');
             return;
         }
+        if (!pdfBlob) return;
 
-        message.loading({ content: 'Mempersiapkan file...', key: 'pdfshare' });
-        try {
-            const response = await fetch(pdfUrl);
-            if (!response.ok) throw new Error('Gagal mengambil file PDF.');
-            const blob = await response.blob();
-            const fileName = `${pdfTitle.replace(/ /g, '_') || 'file'}.pdf`;
-            const file = new File([blob], fileName, { type: 'application/pdf' });
+        const fileName = `${pdfTitle.replace(/ /g, '_') || 'file'}.pdf`;
+        const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+        const shareData = {
+            title: pdfTitle,
+            text: `Berikut adalah file: ${pdfTitle}`,
+            files: [file],
+        };
 
-            const shareData = {
-                title: pdfTitle,
-                text: `Berikut adalah file: ${pdfTitle}`,
-                files: [file],
-            };
-
-            if (navigator.canShare && navigator.canShare(shareData)) {
+        if (navigator.canShare && navigator.canShare(shareData)) {
+            try {
                 await navigator.share(shareData);
-                message.success({ content: 'File berhasil dibagikan!', key: 'pdfshare', duration: 2 });
-            } else {
-                message.warn({ content: 'Berbagi file tidak didukung, membagikan link...', key: 'pdfshare', duration: 2 });
-                await navigator.share({
-                    title: pdfTitle,
-                    url: pdfUrl,
-                });
+                message.success('File berhasil dibagikan!');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Share error:', error);
+                    message.error(`Gagal membagikan: ${error.message}`);
+                }
             }
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Share error:', error);
-                message.error({ content: `Gagal membagikan: ${error.message}`, key: 'pdfshare', duration: 3 });
-            } else {
-                message.destroy('pdfshare');
-            }
+        } else {
+            message.warn('Browser ini tidak mendukung pembagian file secara langsung.');
         }
     };
+    // ----------------------------------------------------
 
 
     const columns = [
+        // ... (Kolom tidak berubah) ...
         {
             title: 'No.',
             key: 'index',
@@ -282,7 +303,7 @@ export default function TransaksiJualPage() {
 
     return (
         <Content style={{ padding: '24px' }}>
-            {/* Floating primary add button */}
+            {/* ... (Floating button, Title, Recap Cards, Search, Filter Radio tidak berubah) ... */}
             <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 10 }}>
                 <Button type="primary" shape="round" icon={<PlusOutlined />} size="large" style={{ boxShadow: '0 4px 12px rgba(0,0,0,.15)' }} onClick={handleOpenCreate}>
                     Tambah Transaksi
@@ -339,7 +360,7 @@ export default function TransaksiJualPage() {
                 />
             </Card>
 
-            {/* CREATE / EDIT MODAL */}
+            {/* ... (Modal Create/Edit tidak berubah) ... */}
             <Modal
                 open={isFormModalOpen}
                 onCancel={handleCloseFormModal}
@@ -364,10 +385,10 @@ export default function TransaksiJualPage() {
                 )}
             </Modal>
 
-            {/* DETAIL MODAL */}
+            {/* ... (Modal Detail tidak berubah) ... */}
             <TransaksiJualDetailModal open={isDetailModalOpen} onCancel={handleCloseDetailModal} transaksi={selectedTransaksi} />
 
-            {/* INLINE PDF MODAL (Kode ini tidak berubah, sudah benar) */}
+            {/* --- MODAL PDF DIUBAH (MENGGUNAKAN REACT-PDF-VIEWER) --- */}
             <Modal
                 title={pdfTitle}
                 open={isPdfModalOpen}
@@ -380,17 +401,29 @@ export default function TransaksiJualPage() {
                         Tutup
                     </Button>,
                     navigator.share && (
-                        <Button key="share" icon={<ShareAltOutlined />} onClick={handleSharePdf}>
+                        <Button 
+                            key="share" 
+                            icon={<ShareAltOutlined />} 
+                            onClick={handleSharePdf}
+                            disabled={isPdfGenerating || !pdfBlob} // Update disabled
+                        >
                             Share File
                         </Button>
                     ),
-                    <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadPdf}>
+                    <Button 
+                        key="download" 
+                        type="primary" 
+                        icon={<DownloadOutlined />} 
+                        onClick={handleDownloadPdf}
+                        disabled={isPdfGenerating || !pdfBlob} // Update disabled
+                    >
                         Download
                     </Button>
                 ]}
                 bodyStyle={{ padding: 0, height: '75vh', position: 'relative' }}
             >
-                {isPdfLoading && (
+                {/* Tampilkan spinner saat blob sedang dibuat */}
+                {isPdfGenerating && (
                     <div style={{
                         position: 'absolute',
                         top: 0,
@@ -403,19 +436,24 @@ export default function TransaksiJualPage() {
                         backgroundColor: 'rgba(255, 255, 255, 0.7)',
                         zIndex: 10,
                     }}>
-                        <Spin size="large" tip="Memuat PDF..." />
+                        <Spin size="large" tip="Membuat file PDF..." />
                     </div>
                 )}
                 
-                {pdfUrl ? (
-                    <iframe
-                        src={pdfUrl}
-                        style={{ width: '100%', height: '100%', border: 'none' }}
-                        title={pdfTitle}
-                        onLoad={() => setIsPdfLoading(false)}
-                    />
+                {/* Tampilkan viewer HANYA JIKA tidak loading DAN blob sudah ada */}
+                {!isPdfGenerating && pdfBlob ? (
+                    <div style={{ height: '100%', width: '100%', overflow: 'auto' }}>
+                        <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+                            <Viewer fileUrl={URL.createObjectURL(pdfBlob)} />
+                        </Worker>
+                    </div>
                 ) : (
-                    <div style={{ textAlign: 'center', padding: 50 }}><Spin /></div>
+                    // Jika tidak loading tapi blob juga tidak ada (misal. error tapi modal belum tertutup)
+                    !isPdfGenerating && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}>
+                            <Empty description="Gagal memuat PDF" />
+                        </div>
+                    )
                 )}
             </Modal>
         </Content>
