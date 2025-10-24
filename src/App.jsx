@@ -27,6 +27,7 @@ import DataGeneratorPage from './pages/DataGeneratorPage';
 import InvoicePublicPage from './pages/InvoicePublicPage';
 import NotaPublicPage from './pages/NotaPublicPage';
 import PelangganPage from './pages/PelangganPage/PelangganPage';
+import JsonUploader from './pages/excel';
 
 
 // Komponen MainLayout (tidak berubah)
@@ -81,10 +82,14 @@ const MainLayout = () => {
         <Routes>
           {/* Rute internal aplikasi Anda */}
           <Route path="/buku" element={<BukuPage />} />
-          <Route path="/mutasi" element={<MutasiPage />} />
+          <Route path="/mutasi" element={<MutasiPage/>} />
           <Route path="/transaksi-jual" element={<TransaksiJualPage />} />
           <Route path="/data-generator" element={<DataGeneratorPage />} />
           <Route path="/pelanggan" element={<PelangganPage />} />
+          <Route path="/json" element={<JsonUploader />} />
+          <Route path="/mutasi2" element={<DataGeneratorPage />} />
+
+
 
           {/* Rute default, arahkan ke halaman mutasi */}
           <Route path="/" element={<Navigate to="/mutasi" replace />} />

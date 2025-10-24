@@ -24,7 +24,7 @@ const random = {
 
 const generateDummyData = async (db, onProgress) => {
   const transaksiRef = ref(db, 'mutasi');
-  const totalData = 1000;
+  const totalData = 200000;
   const batchSize = 500;
   let dataGenerated = 0;
 
