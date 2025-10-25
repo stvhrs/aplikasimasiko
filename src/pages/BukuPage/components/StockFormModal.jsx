@@ -1,172 +1,198 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Modal, Form, Input, InputNumber, message, Typography, 
-    Timeline, Empty 
-} from 'antd';
-import { db } from '../../../api/firebase';
-import { ref, update, push, serverTimestamp } from 'firebase/database';
-
-const { Text, Title } = Typography;
+import { Modal, Form, Input, InputNumber, Row, Col, Grid, message, Spin, Alert, Typography, Table ,Button} from 'antd';
+import { ref, push, serverTimestamp, runTransaction, query, orderByChild, limitToLast, onValue } from 'firebase/database';
+import { db, storage } from '../../../api/firebase';
+import { timestampFormatter, numberFormatter } from '../../../utils/formatters'; // Impor formatters
+const { Title, Text } = Typography;
 
 const StokFormModal = ({ open, onCancel, buku }) => {
     const [form] = Form.useForm();
-    const [isSaving, setIsSaving] = useState(false);
-    const [historiArray, setHistoriArray] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [history, setHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const screens = Grid.useBreakpoint();
 
-    // -----------------------------------------------------------------
-    // --- PERBAIKAN: 'useEffect' dipindahkan ke atas SINI ---
-    // --- Semua Hook HARUS dipanggil sebelum pengecekan/return ---
     useEffect(() => {
-        // Cek jika modal sedang dibuka dan ada data buku
-        if (open && buku && buku.historiStok) {
-            // Ubah objek historiStok menjadi array
-            const arr = Object.values(buku.historiStok)
-                // Urutkan berdasarkan timestamp, terbaru (angka terbesar) di atas
-                .sort((a, b) => b.timestamp - a.timestamp); 
-            setHistoriArray(arr);
-        } else {
-            // Kosongkan array jika modal ditutup atau tidak ada data
-            setHistoriArray([]);
-        }
-    }, [open, buku]); // Jalankan ulang jika 'open' atau 'buku' berubah
-    // -----------------------------------------------------------------
-
-
-    // Guard clause (penjaga)
-    // Pengecekan ini sekarang aman karena semua Hook (useState, useEffect) sudah dipanggil di atas.
-    if (!buku || !buku.id) return null;
-
-
-    const handleFinishStok = async (values) => {
-        setIsSaving(true);
-        message.loading({ content: 'Memperbarui Stok...', key: 'stok' });
-
-        try {
-            const { perubahan, keterangan } = values;
-            const stokSebelum = Number(buku.stok || 0);
-            const stokSesudah = stokSebelum + Number(perubahan);
-
-            const logEntri = {
-                timestamp: serverTimestamp(),
-                keterangan,
-                perubahan: Number(perubahan),
-                stokSebelum,
-                stokSesudah
-            };
-
-            const logKey = push(ref(db, `buku/${buku.id}/historiStok`)).key;
-
-            const updates = {};
-            updates[`buku/${buku.id}/stok`] = stokSesudah;
-            updates[`buku/${buku.id}/historiStok/${logKey}`] = logEntri;
-
-            await update(ref(db), updates);
-
-            message.success({ content: 'Stok berhasil diperbarui', key: 'stok' });
+        if (!open) {
             form.resetFields();
-            onCancel(); 
+        }
+    }, [open, form]);
+
+    // Effect untuk memuat riwayat stok buku ini (Tidak berubah)
+    useEffect(() => {
+        if (open && buku?.id) {
+            setHistoryLoading(true);
+            const bookHistoryRef = query(
+                ref(db, `buku/${buku.id}/historiStok`),
+                orderByChild('timestamp'),
+                limitToLast(20)
+            );
+
+            const unsubscribe = onValue(bookHistoryRef, (snapshot) => {
+                const data = snapshot.val();
+                const loadedHistory = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+                loadedHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setHistory(loadedHistory);
+                setHistoryLoading(false);
+            }, (error) => {
+                console.error("Gagal memuat riwayat buku:", error);
+                message.error("Gagal memuat riwayat buku.");
+                setHistoryLoading(false);
+            });
+
+            return () => unsubscribe();
+        } else {
+            setHistory([]);
+        }
+    }, [open, buku?.id]);
+
+    if (!buku) return null;
+
+    const handleStokUpdate = async (values) => {
+        const { jumlah, keterangan } = values;
+        const jumlahNum = Number(jumlah);
+        if (isNaN(jumlahNum)) { // Validasi lebih ketat
+             message.error("Jumlah harus berupa angka.");
+             return;
+        }
+         if (jumlahNum === 0) { // Validasi tidak boleh 0
+             message.error("Jumlah perubahan tidak boleh 0.");
+             return;
+        }
+
+
+        setLoading(true);
+        try {
+            const stokSebelum = Number(buku.stok) || 0;
+            const stokSesudah = stokSebelum + jumlahNum;
+
+            // --- PERBAIKAN: Tambahkan 'perubahan' ---
+            const historyData = {
+                bukuId: buku.id,
+                judul: buku.judul,
+                kode_buku: buku.kode_buku,
+                jumlah: jumlahNum, // Ini adalah jumlah perubahan
+                perubahan: jumlahNum, // <-- TAMBAHKAN INI LAGI
+                keterangan: keterangan || (jumlahNum > 0 ? 'Stok Masuk' : 'Stok Keluar'),
+                stokSebelum: stokSebelum, // Stok sebelum perubahan
+                stokSesudah: stokSesudah, // Stok setelah perubahan
+                timestamp: serverTimestamp(),
+            };
+            // --- AKHIR PERBAIKAN ---
+            console.log("Saving history data:", historyData); // DEBUG
+
+            // 1. Catat HANYA ke riwayat stok BUKU
+            const bookHistoryRef = ref(db, `buku/${buku.id}/historiStok`);
+            await push(bookHistoryRef, historyData);
+
+            // 2. Update stok di buku menggunakan Transaksi
+            const bukuStokRef = ref(db, `buku/${buku.id}/stok`);
+            await runTransaction(bukuStokRef, (currentStok) => {
+                 const currentNum = Number(currentStok) || 0; // Pastikan angka
+                return currentNum + jumlahNum; // Update stok
+            });
+
+            message.success(`Stok ${buku.judul} berhasil diperbarui.`);
+            onCancel(); // Tutup modal setelah sukses
         } catch (error) {
-            console.error("Error updating stock: ", error);
-            message.error({ content: `Gagal memperbarui: ${error.message}`, key: 'stok' });
+            console.error("Stok update error:", error);
+            message.error("Gagal memperbarui stok: " + error.message);
         } finally {
-            setIsSaving(false);
+            setLoading(false);
         }
     };
 
-    // Fungsi helper untuk format tanggal
-    const formatTimestamp = (timestamp) => {
-        if (!timestamp) return '...';
-        return new Date(timestamp).toLocaleString('id-ID', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+    // Kolom untuk tabel riwayat di modal (Tidak berubah)
+    const modalHistoryColumns = [
+        { title: 'Waktu', dataIndex: 'timestamp', key: 'timestamp', width: 140, render: timestampFormatter, },
+        {
+            title: 'Perubahan', // Ganti judul kolom dari 'Jumlah' menjadi 'Perubahan' agar konsisten
+            dataIndex: 'perubahan', // Tampilkan data dari field 'perubahan'
+            key: 'perubahan', // Key juga ganti
+            width: 100, // Lebar bisa disesuaikan
+            align: 'right',
+            render: (val) => { /* ... logika render warna ... */
+                const num = Number(val);
+                const color = num > 0 ? '#52c41a' : (num < 0 ? '#f5222d' : '#8c8c8c');
+                return (
+                    <Text strong style={{ color: color }}>
+                        {num > 0 ? '+' : ''}{numberFormatter(val)}
+                    </Text>
+                )
+             }
+        },
+         // Jika masih ingin menampilkan 'jumlah' (meskipun mungkin redundant):
+         // { title: 'Jumlah Sblm', dataIndex: 'stokSebelum', key: 'stokSebelum', width: 80, align: 'right', render: numberFormatter },
+         // { title: 'Jumlah Stlh', dataIndex: 'stokSesudah', key: 'stokSesudah', width: 80, align: 'right', render: numberFormatter },
+        { title: 'Keterangan', dataIndex: 'keterangan', key: 'keterangan', ellipsis: true }, // Tambah ellipsis
+    ];
 
     return (
         <Modal
+            title={`Update Stok: ${buku?.judul || '...'}`} // Gunakan optional chaining
             open={open}
-            title="Update Stok Buku"
             onCancel={onCancel}
-            onOk={form.submit}
-            confirmLoading={isSaving}
+            footer={null}
             destroyOnClose
-            width={600} 
+            width={800}
         >
-            <Title level={5}>{buku.judul}</Title>
-            <Text>Stok Saat Ini: <Text strong>{buku.stok || 0}</Text></Text>
-
-            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>
-                Riwayat Stok
-            </Title>
-            <div 
-                style={{ 
-                    maxHeight: 250, 
-                    overflowY: 'auto', 
-                    border: '1px solid #f0f0f0', 
-                    padding: '16px', 
-                    borderRadius: 8,
-                    marginBottom: 24 
-                }}
-            >
-                {historiArray.length > 0 ? (
-                    <Timeline>
-                        {historiArray.map((item, index) => (
-                            <Timeline.Item
-                                key={index}
-                                color={item.perubahan >= 0 ? 'green' : 'red'}
+            <Spin spinning={loading}>
+                <Row gutter={24}>
+                    {/* Kolom Formulir */}
+                    <Col sm={10} xs={24}>
+                        <Alert
+                            message={`Stok Saat Ini: ${numberFormatter(buku?.stok)}`} // Optional chaining
+                            type="info"
+                            style={{ marginBottom: 16 }}
+                        />
+                        <Form
+                            form={form}
+                            layout="vertical"
+                            onFinish={handleStokUpdate}
+                            initialValues={{ jumlah: null, keterangan: '' }}
+                        >
+                            <Form.Item
+                                name="jumlah"
+                                label="Jumlah Perubahan (+/-)" // Ubah label agar lebih jelas
+                                rules={[
+                                    { required: true, message: 'Masukkan jumlah perubahan' },
+                                    { type: 'number', message: 'Jumlah harus angka' },
+                                    { validator: (_, value) => value !== 0 ? Promise.resolve() : Promise.reject(new Error('Jumlah tidak boleh 0')) } // Validasi tidak boleh 0
+                                ]}
                             >
-                                <Text strong>{item.keterangan}</Text>
-                                <div>
-                                    <Text 
-                                        strong 
-                                        style={{ 
-                                            color: item.perubahan >= 0 ? '#52c41a' : '#f5222d',
-                                            fontSize: 16 
-                                        }}
-                                    >
-                                        {item.perubahan > 0 ? `+${item.perubahan}` : item.perubahan}
-                                    </Text>
-                                </div>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {`Stok berubah dari ${item.stokSebelum} menjadi ${item.stokSesudah}`}
-                                </Text>
-                                <br />
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {formatTimestamp(item.timestamp)}
-                                </Text>
-                            </Timeline.Item>
-                        ))}
-                    </Timeline>
-                ) : (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Belum ada riwayat stok" />
-                )}
-            </div>
-            
-            <Form form={form} layout="vertical" onFinish={handleFinishStok}>
-                <Title level={5} style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
-                    Input Perubahan Stok
-                </Title>
-                
-                <Form.Item
-                    name="perubahan"
-                    label="Perubahan Stok"
-                    rules={[{ required: true, message: 'Jumlah wajib diisi!' }]}
-                    help="Gunakan angka positif (cth: 50) untuk menambah stok, atau angka negatif (cth: -10) untuk mengurangi stok."
-                >
-                    <InputNumber style={{ width: '100%' }} placeholder="cth: 50 atau -10" />
-                </Form.Item>
+                                <InputNumber style={{ width: '100%' }} placeholder="Contoh: 50 atau -10" />
+                            </Form.Item>
+                            <Form.Item
+                                name="keterangan"
+                                label="Keterangan (Opsional)"
+                            >
+                                <Input placeholder="Contoh: Koreksi Stok" />
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" block loading={loading}> {/* Tambah state loading di button */}
+                                    Update Stok
+                                </Button>
+                            </Form.Item>
+                        </Form>
+                    </Col>
 
-                <Form.Item
-                    name="keterangan"
-                    label="Keterangan"
-                    rules={[{ required: true, message: 'Keterangan wajib diisi!' }]}
-                >
-                    <Input placeholder="cth: Stok opname, Retur, Stok awal" />
-                </Form.Item>
-            </Form>
+                    {/* Kolom Riwayat Stok Buku Ini */}
+                    <Col sm={14} xs={24}>
+                        <Title level={5} style={{ marginTop: screens.xs ? 16 : 0, marginBottom: 16 }}>
+                            Riwayat Stok Buku Ini (20 Terbaru)
+                        </Title>
+                        <Table
+                            columns={modalHistoryColumns}
+                            dataSource={history}
+                            loading={historyLoading}
+                            rowKey="id"
+                            pagination={false}
+                            size="small"
+                            scroll={{ y: 320 }}
+                        />
+                    </Col>
+                </Row>
+            </Spin>
         </Modal>
     );
 };

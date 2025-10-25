@@ -12,7 +12,16 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+/* index.css atau App.css */
 
+.ant-table-tbody > tr.zebra-row:nth-child(even) > td {
+  background-color: #fafafa; /* Warna abu-abu terang */
+}
+
+/* Opsional: Efek hover agar tetap terlihat jelas */
+.ant-table-tbody > tr:hover > td {
+  background-color: #e6f7ff !important; /* Warna biru muda saat hover, !important mungkin diperlukan */
+}
 a {
   font-weight: 500;
   color: #646cff;

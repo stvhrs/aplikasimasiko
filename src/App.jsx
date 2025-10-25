@@ -28,6 +28,7 @@ import InvoicePublicPage from './pages/InvoicePublicPage';
 import NotaPublicPage from './pages/NotaPublicPage';
 import PelangganPage from './pages/PelangganPage/PelangganPage';
 import JsonUploader from './pages/excel';
+import DataGeneratorTransaksiJual from './pages/data';
 
 
 // Komponen MainLayout (tidak berubah)
@@ -46,6 +47,11 @@ const MainLayout = () => {
     if (path.startsWith('/mutasi')) return '/mutasi';
     if (path.startsWith('/transaksi-jual')) return '/transaksi-jual';
     if (path.startsWith('/pelanggan')) return '/pelanggan';
+    if (path.startsWith('/mutasi3')) return '/mutasi3';
+    if (path.startsWith('/mutasi2')) return '/mutasi2';
+
+
+
     return '/mutasi'; // Default
   };
 
@@ -80,6 +86,7 @@ const MainLayout = () => {
         {!screens.lg && <MobileHeader onMenuClick={handleMenuClick} />}
         
         <Routes>
+    
           {/* Rute internal aplikasi Anda */}
           <Route path="/buku" element={<BukuPage />} />
           <Route path="/mutasi" element={<MutasiPage/>} />
@@ -88,6 +95,8 @@ const MainLayout = () => {
           <Route path="/pelanggan" element={<PelangganPage />} />
           <Route path="/json" element={<JsonUploader />} />
           <Route path="/mutasi2" element={<DataGeneratorPage />} />
+          <Route path="/mutasi3" element={<DataGeneratorTransaksiJual />} />
+
 
 
 

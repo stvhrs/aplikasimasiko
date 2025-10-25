@@ -5,6 +5,16 @@
   text-align: center;
 }
 
+.ant-table-tbody > tr.zebra-row:nth-child(even) > td {
+  background-color: #fafafa; /* Warna abu-abu terang */
+}
+
+/* Opsional: Efek hover agar tetap terlihat jelas */
+.ant-table-tbody > tr:hover > td {
+  background-color: #e6f7ff !important; /* Warna biru muda saat hover, !important mungkin diperlukan */
+}
+
+
 .logo {
   height: 6em;
   padding: 1.5em;

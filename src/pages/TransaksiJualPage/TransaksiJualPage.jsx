@@ -1,9 +1,4 @@
-// ================================
-// FILE: src/pages/transaksi-jual/TransaksiJualPage.jsx
-// Versi dengan optimasi anti-lag, pemisahan tabel, dan perbaikan warning
-// ================================
-
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useDeferredValue } from 'react';
 import {
     Layout, Card, Spin, Empty, Typography, Input, Row, Col, Statistic, Tag, Button, Modal,
     Dropdown, Menu, Radio, App // Hapus Table jika tidak dipakai
@@ -41,17 +36,184 @@ const formatDate = (timestamp) =>
 const normalizeStatus = (s) => (s === 'DP' ? 'Sebagian' : s || 'N/A');
 // -------------
 
+// --- (IMPLEMENTASI) Singleton RTDB Listener untuk 'transaksiJualBuku' ---
+let txJualCache = [];
+let txJualListeners = [];
+let txJualIsInitialized = false;
+let txJualIsLoading = false;
+let txJualGlobalUnsubscribe = null;
+
+function notifyTxJualListeners() {
+    txJualListeners.forEach((listener) => listener(txJualCache));
+}
+
+function initializeTxJualListener() {
+    if (txJualGlobalUnsubscribe || txJualIsLoading) return;
+    txJualIsLoading = true;
+    
+    const txRef = ref(db, 'transaksiJualBuku');
+    txJualGlobalUnsubscribe = onValue(txRef, (snapshot) => {
+        // Logika sorting asli dipertahankan
+        const data = snapshotToArray(snapshot).sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
+        txJualCache = data;
+        txJualIsInitialized = true;
+        txJualIsLoading = false;
+        notifyTxJualListeners();
+    }, (error) => {
+        console.error("Firebase error (transaksiJual):", error);
+        // message.error tidak bisa dipakai di sini (di luar React)
+        txJualIsInitialized = true;
+        txJualIsLoading = false;
+        notifyTxJualListeners();
+    });
+}
+
+function useTransaksiJualData() {
+    const [data, setData] = useState(txJualCache);
+    const [loading, setLoading] = useState(!txJualIsInitialized);
+
+    useEffect(() => {
+        if (!txJualGlobalUnsubscribe) {
+            initializeTxJualListener();
+        }
+        txJualListeners.push(setData);
+        if (txJualIsInitialized) {
+            setData(txJualCache);
+            setLoading(false);
+        }
+        return () => {
+            txJualListeners = txJualListeners.filter((cb) => cb !== setData);
+        };
+    }, []);
+    return { data, loading: loading && !txJualIsInitialized };
+}
+// --- Akhir Singleton 'transaksiJualBuku' ---
+
+
+// --- (IMPLEMENTASI) Singleton RTDB Listener untuk 'buku' ---
+let bukuCache = [];
+let bukuListeners = [];
+let bukuIsInitialized = false;
+let bukuIsLoading = false;
+let bukuGlobalUnsubscribe = null;
+
+function notifyBukuListeners() {
+    bukuListeners.forEach((listener) => listener(bukuCache));
+}
+
+function initializeBukuListener() {
+    if (bukuGlobalUnsubscribe || bukuIsLoading) return;
+    bukuIsLoading = true;
+    
+    bukuGlobalUnsubscribe = onValue(ref(db, 'buku'), (snapshot) => {
+        bukuCache = snapshotToArray(snapshot);
+        bukuIsInitialized = true;
+        bukuIsLoading = false;
+        notifyBukuListeners();
+    }, (error) => {
+        console.error("Firebase error (buku global):", error);
+        bukuIsInitialized = true;
+        bukuIsLoading = false;
+        notifyBukuListeners();
+    });
+}
+
+function useBukuData() {
+    const [bukuList, setBukuList] = useState(bukuCache);
+    const [loadingBuku, setLoadingBuku] = useState(!bukuIsInitialized);
+
+    useEffect(() => {
+        if (!bukuGlobalUnsubscribe) {
+            initializeBukuListener();
+        }
+        bukuListeners.push(setBukuList);
+        if (bukuIsInitialized) {
+            setBukuList(bukuCache);
+            setLoadingBuku(false);
+        }
+        return () => {
+            bukuListeners = bukuListeners.filter((cb) => cb !== setBukuList);
+        };
+    }, []);
+    return { bukuList, loadingBuku: loadingBuku && !bukuIsInitialized };
+}
+// --- Akhir Singleton 'buku' ---
+
+
+// --- (IMPLEMENTASI) Singleton RTDB Listener untuk 'pelanggan' ---
+let pelangganCache = [];
+let pelangganListeners = [];
+let pelangganIsInitialized = false;
+let pelangganIsLoading = false;
+let pelangganGlobalUnsubscribe = null;
+
+function notifyPelangganListeners() {
+    pelangganListeners.forEach((listener) => listener(pelangganCache));
+}
+
+function initializePelangganListener() {
+    if (pelangganGlobalUnsubscribe || pelangganIsLoading) return;
+    pelangganIsLoading = true;
+    
+    pelangganGlobalUnsubscribe = onValue(ref(db, 'pelanggan'), (snapshot) => {
+        pelangganCache = snapshotToArray(snapshot);
+        pelangganIsInitialized = true;
+        pelangganIsLoading = false;
+        notifyPelangganListeners();
+    }, (error) => {
+        console.error("Firebase error (pelanggan global):", error);
+        pelangganIsInitialized = true;
+        pelangganIsLoading = false;
+        notifyPelangganListeners();
+    });
+}
+
+function usePelangganData() {
+    const [pelangganList, setPelangganList] = useState(pelangganCache);
+    const [loadingPelanggan, setLoadingPelanggan] = useState(!pelangganIsInitialized);
+
+    useEffect(() => {
+        if (!pelangganGlobalUnsubscribe) {
+            initializePelangganListener();
+        }
+        pelangganListeners.push(setPelangganList);
+        if (pelangganIsInitialized) {
+            setPelangganList(pelangganCache);
+            setLoadingPelanggan(false);
+        }
+        return () => {
+            pelangganListeners = pelangganListeners.filter((cb) => cb !== setPelangganList);
+        };
+    }, []);
+    return { pelangganList, loadingPelanggan: loadingPelanggan && !pelangganIsInitialized };
+}
+// --- Akhir Singleton 'pelanggan' ---
+
+
 export default function TransaksiJualPage() {
     const { message } = App.useApp(); // Hook message Antd
 
-    const [allTransaksi, setAllTransaksi] = useState([]);
-    const [loadingTransaksi, setLoadingTransaksi] = useState(true); // Fetch awal
-    const [isFiltering, setIsFiltering] = useState(false); // Spinner filter/search/page
+    // --- Ganti State Lokal dengan Hook Singleton ---
+    const { data: allTransaksi, loading: loadingTransaksi } = useTransaksiJualData();
+    const { bukuList, loadingBuku } = useBukuData();
+    const { pelangganList, loadingPelanggan } = usePelangganData();
+    // Kombinasikan status loading dependencies
+    const loadingDependencies = loadingBuku || loadingPelanggan; 
+    // --- Akhir Perubahan State ---
+
+    // HAPUS state isFiltering lama
+    // const [isFiltering, setIsFiltering] = useState(false); // Spinner filter/search/page
 
     // State Filter & Search
     const [searchText, setSearchText] = useState(''); // State input search
     const debouncedSearchText = useDebounce(searchText, 300); // Debounce untuk filter
     const [statusFilter, setStatusFilter] = useState(null); // Filter status
+
+    // --- Defer state yang mahal ---
+    const deferredAllTransaksi = useDeferredValue(allTransaksi);
+    const deferredDebouncedSearch = useDeferredValue(debouncedSearchText);
+    const deferredStatusFilter = useDeferredValue(statusFilter);
+    // ---------------------------------
 
     const showTotalPagination = useCallback((total, range) => `${range[0]}-${range[1]} dari ${total} transaksi`, []);
     const [pagination, setPagination] = useState({
@@ -59,11 +221,6 @@ export default function TransaksiJualPage() {
         showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'],
         showTotal: showTotalPagination
     });
-
-    // Data Dependencies (Buku & Pelanggan)
-    const [bukuList, setBukuList] = useState([]);
-    const [pelangganList, setPelangganList] = useState([]);
-    const [loadingDependencies, setLoadingDependencies] = useState(true);
 
     // State Modal Form
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -80,70 +237,29 @@ export default function TransaksiJualPage() {
     const [pdfTitle, setPdfTitle] = useState('');
     const [isPdfGenerating, setIsPdfGenerating] = useState(false);
 
-    // --- Fetch Transaksi ---
-    useEffect(() => {
-        setLoadingTransaksi(true);
-        const txRef = ref(db, 'transaksiJualBuku');
-        const unsub = onValue(txRef, (snapshot) => {
-            const data = snapshotToArray(snapshot).sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
-            setAllTransaksi(data);
-            setLoadingTransaksi(false);
-        }, (error) => {
-            console.error("Firebase error (transaksi):", error);
-            message.error("Gagal memuat data transaksi.");
-            setLoadingTransaksi(false);
-        });
-        return () => unsub();
-    }, []);
+    // --- HAPUS: useEffect Fetch Transaksi ---
+    // ... (useEffect onValue 'transaksiJualBuku' dihapus) ...
 
-    // --- Fetch Dependencies (Buku & Pelanggan) ---
-    useEffect(() => {
-        setLoadingDependencies(true);
-        let bukuUnsub, pelangganUnsub;
-        const loadDeps = async () => {
-            try {
-                const bukuPromise = new Promise((resolve) => {
-                    bukuUnsub = onValue(ref(db, 'buku'), (snap) => resolve(snapshotToArray(snap)), (err) => resolve([])); // fallback empty array on error
-                });
-                const pelangganPromise = new Promise((resolve) => {
-                     pelangganUnsub = onValue(ref(db, 'pelanggan'), (snap) => resolve(snapshotToArray(snap)), (err) => resolve([])); // fallback empty array on error
-                });
-                const [bukuData, pelangganData] = await Promise.all([bukuPromise, pelangganPromise]);
-                setBukuList(bukuData);
-                setPelangganList(pelangganData);
-            } catch (error) {
-                 console.error("Gagal fetch dependencies:", error);
-                 message.error("Gagal memuat data buku/pelanggan.");
-            } finally {
-                setLoadingDependencies(false);
-            }
-        };
-        loadDeps();
-        // Cleanup
-        return () => {
-             if (bukuUnsub) bukuUnsub();
-             if (pelangganUnsub) pelangganUnsub();
-        };
-    }, []);
+    // --- HAPUS: useEffect Fetch Dependencies (Buku & Pelanggan) ---
+    // ... (useEffect onValue 'buku' & 'pelanggan' dihapus) ...
 
     // --- Filter Data ---
     const filteredTransaksi = useMemo(() => {
-        // Aktifkan spinner saat filter/search berubah
-        setIsFiltering(true);
-        let data = allTransaksi;
+        // HAPUS: setIsFiltering(true);
+        let data = deferredAllTransaksi; // <-- Gunakan deferred value
 
         // Filter by Status
-        if (statusFilter) {
+        if (deferredStatusFilter) { // <-- Gunakan deferred value
             data = data.filter((tx) => {
                 const s = tx.statusPembayaran || '';
-                if (statusFilter === 'Sebagian') return s === 'Sebagian' || s === 'DP';
-                return s === statusFilter;
+                if (deferredStatusFilter === 'Sebagian') return s === 'Sebagian' || s === 'DP'; // <-- Ganti statusFilter
+                return s === deferredStatusFilter; // <-- Ganti statusFilter
             });
         }
 
         // Filter by Search Text (Debounced)
-        if (debouncedSearchText) {
-            const q = debouncedSearchText.toLowerCase();
+        if (deferredDebouncedSearch) { // <-- Gunakan deferred value
+            const q = deferredDebouncedSearch.toLowerCase(); // <-- Ganti debouncedSearchText
             data = data.filter((tx) =>
                 (tx.nomorInvoice || '').toLowerCase().includes(q) || // Tambah search by invoice
                 (tx.namaPelanggan || '').toLowerCase().includes(q) ||
@@ -152,21 +268,32 @@ export default function TransaksiJualPage() {
         }
 
         return data;
-    }, [allTransaksi, statusFilter, debouncedSearchText]); // Dependensi
+    }, [deferredAllTransaksi, deferredStatusFilter, deferredDebouncedSearch]); // <-- Ubah dependensi
 
 
-    // --- Efek untuk mematikan spinner setelah filter ---
-    useEffect(() => {
-        if (isFiltering) {
-            const timer = setTimeout(() => setIsFiltering(false), 350); // Jeda spinner
-            return () => clearTimeout(timer);
-        }
-    }, [isFiltering, filteredTransaksi]); // Tergantung hasil filter
+    // --- Buat state isFiltering baru dari perbandingan deferred ---
+    const isFiltering = 
+        allTransaksi !== deferredAllTransaksi ||
+        debouncedSearchText !== deferredDebouncedSearch ||
+        statusFilter !== deferredStatusFilter;
+    // ----------------------------------------------------------------
+
+
+    // --- HAPUS: Efek untuk mematikan spinner setelah filter ---
+    // useEffect(() => {
+    //     if (isFiltering) {
+    //         const timer = setTimeout(() => setIsFiltering(false), 350); // Jeda spinner
+    //         return () => clearTimeout(timer);
+    //     }
+    // }, [isFiltering, filteredTransaksi]); // Tergantung hasil filter
 
     // --- Kalkulasi Rekap (hanya dari data filter aktif) ---
-    // Diubah agar hanya kalkulasi saat filteredTransaksi berubah
     const recapData = useMemo(() => {
-        const dataToRecap = isFiltering ? filteredTransaksi : allTransaksi; // Gunakan data filter jika aktif
+        // Tentukan data mana yang akan direkap
+        // !! PERBAIKAN: Gunakan deferred values di sini agar konsisten
+        const isFilterActive = deferredStatusFilter || deferredDebouncedSearch; 
+        const dataToRecap = filteredTransaksi; // filteredTransaksi SUDAH deferred
+        
         const totals = dataToRecap.reduce(
             (acc, tx) => ({
                 tagihan: acc.tagihan + Number(tx.totalTagihan || 0),
@@ -177,21 +304,22 @@ export default function TransaksiJualPage() {
         return {
             totalTagihan: totals.tagihan,
             totalTerbayar: totals.terbayar,
-            sisaTagihan: totals.tagihan - totals.terbayar
+            sisaTagihan: totals.tagihan - totals.terbayar,
+            isFilterActive: isFilterActive // Tambahkan status filter
         };
-    }, [filteredTransaksi, allTransaksi, isFiltering]); // Tambah isFiltering
+    }, [filteredTransaksi, deferredStatusFilter, deferredDebouncedSearch]); // <-- PERBAIKAN dependensi
 
 
     // --- Handlers ---
     const handleSearchChange = useCallback((e) => {
         setSearchText(e.target.value); // Update input state langsung
-        // isFiltering akan diaktifkan oleh useMemo filteredTransaksi
+        // HAPUS: isFiltering akan diaktifkan oleh useMemo filteredTransaksi
         setPagination(prev => ({ ...prev, current: 1 })); // Reset page saat search
     }, []);
 
     const handleStatusFilterChange = useCallback((e) => {
         setStatusFilter(e.target.value); // Update filter status
-        setIsFiltering(true); // Aktifkan spinner
+        // HAPUS: setIsFiltering(true); // Aktifkan spinner
         setPagination(prev => ({ ...prev, current: 1 })); // Reset page saat filter
     }, []);
 
@@ -199,10 +327,9 @@ export default function TransaksiJualPage() {
     const handleTableChange = useCallback((paginationConfig, filters, sorter) => {
         // Hanya aktifkan spinner jika pagination berubah
          if (paginationConfig.current !== pagination.current || paginationConfig.pageSize !== pagination.pageSize) {
-           setIsFiltering(true);
-        }
+            // setIsFiltering(true); // <-- HAPUS: Ini menyebabkan 'isFiltering' macet
+         }
         setPagination(paginationConfig);
-        // Note: Sorting ditangani oleh Ant Table, tidak perlu state terpisah di sini
     }, [pagination]); // Dependensi pagination
 
     // Handlers Modal Form
@@ -216,11 +343,11 @@ export default function TransaksiJualPage() {
     const handleCloseDetailModal = useCallback(() => { setSelectedTransaksi(null); setIsDetailModalOpen(false); }, []);
 
     // --- Handlers PDF (Tetap pakai useCallback) ---
-    const handleClosePdfModal = useCallback(() => { /* ... (seperti sebelumnya) ... */ setIsPdfModalOpen(false); setIsPdfGenerating(false); setPdfBlob(null); setPdfTitle(''); }, []);
-    const handleGenerateInvoice = useCallback(async (tx) => { /* ... (seperti sebelumnya) ... */ setPdfTitle(`Invoice: ${tx.nomorInvoice || tx.id}`); setIsPdfGenerating(true); setIsPdfModalOpen(true); setPdfBlob(null); try { const dataUri = generateInvoicePDF(tx); const blob = await fetch(dataUri).then(r => r.blob()); setPdfBlob(blob); } catch (err) { console.error("Gagal generate invoice:", err); message.error('Gagal PDF invoice.'); setIsPdfModalOpen(false); } finally { setIsPdfGenerating(false); } }, [message]);
-    const handleGenerateNota = useCallback(async (tx) => { /* ... (seperti sebelumnya) ... */ if (!['DP', 'Sebagian', 'Lunas'].includes(tx?.statusPembayaran)) { message.error('Nota hanya untuk status DP/Sebagian/Lunas'); return; } setPdfTitle(`Nota: ${tx.nomorInvoice || tx.id}`); setIsPdfGenerating(true); setIsPdfModalOpen(true); setPdfBlob(null); try { const dataUri = generateNotaPDF(tx); const blob = await fetch(dataUri).then(r => r.blob()); setPdfBlob(blob); } catch (err) { console.error("Gagal generate nota:", err); message.error('Gagal PDF nota.'); setIsPdfModalOpen(false); } finally { setIsPdfGenerating(false); } }, [message]);
-    const handleDownloadPdf = useCallback(async () => { /* ... (seperti sebelumnya) ... */ if (!pdfBlob) return; message.loading({ content: 'Download...', key: 'pdfdl' }); try { const url = URL.createObjectURL(pdfBlob); const link = document.createElement('a'); link.href = url; const fn = `${pdfTitle.replace(/ /g, '_') || 'download'}.pdf`; link.setAttribute('download', fn); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); message.success({ content: 'Download!', key: 'pdfdl', duration: 2 }); } catch (err) { message.error({ content: `Gagal: ${err.message}`, key: 'pdfdl', duration: 3 }); } }, [pdfBlob, pdfTitle, message]);
-    const handleSharePdf = useCallback(async () => { /* ... (seperti sebelumnya) ... */ if (!navigator.share) { message.error('Share tidak didukung.'); return; } if (!pdfBlob) return; const fn = `${pdfTitle.replace(/ /g, '_') || 'file'}.pdf`; const file = new File([pdfBlob], fn, { type: 'application/pdf' }); const shareData = { title: pdfTitle, text: `File: ${pdfTitle}`, files: [file] }; if (navigator.canShare && navigator.canShare(shareData)) { try { await navigator.share(shareData); message.success('Dibagikan!'); } catch (err) { if (err.name !== 'AbortError') message.error(`Gagal: ${err.message}`); } } else { message.warn('Share file tidak didukung.'); } }, [pdfBlob, pdfTitle, message]);
+    const handleClosePdfModal = useCallback(() => { setIsPdfModalOpen(false); setIsPdfGenerating(false); setPdfBlob(null); setPdfTitle(''); }, []);
+    const handleGenerateInvoice = useCallback(async (tx) => { setPdfTitle(`Invoice: ${tx.nomorInvoice || tx.id}`); setIsPdfGenerating(true); setIsPdfModalOpen(true); setPdfBlob(null); try { const dataUri = generateInvoicePDF(tx); const blob = await fetch(dataUri).then(r => r.blob()); setPdfBlob(blob); } catch (err) { console.error("Gagal generate invoice:", err); message.error('Gagal PDF invoice.'); setIsPdfModalOpen(false); } finally { setIsPdfGenerating(false); } }, [message]);
+    const handleGenerateNota = useCallback(async (tx) => { if (!['DP', 'Sebagian', 'Lunas'].includes(tx?.statusPembayaran)) { message.error('Nota hanya untuk status DP/Sebagian/Lunas'); return; } setPdfTitle(`Nota: ${tx.nomorInvoice || tx.id}`); setIsPdfGenerating(true); setIsPdfModalOpen(true); setPdfBlob(null); try { const dataUri = generateNotaPDF(tx); const blob = await fetch(dataUri).then(r => r.blob()); setPdfBlob(blob); } catch (err) { console.error("Gagal generate nota:", err); message.error('Gagal PDF nota.'); setIsPdfModalOpen(false); } finally { setIsPdfGenerating(false); } }, [message]);
+    const handleDownloadPdf = useCallback(async () => { if (!pdfBlob) return; message.loading({ content: 'Download...', key: 'pdfdl' }); try { const url = URL.createObjectURL(pdfBlob); const link = document.createElement('a'); link.href = url; const fn = `${pdfTitle.replace(/ /g, '_') || 'download'}.pdf`; link.setAttribute('download', fn); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); message.success({ content: 'Download!', key: 'pdfdl', duration: 2 }); } catch (err) { message.error({ content: `Gagal: ${err.message}`, key: 'pdfdl', duration: 3 }); } }, [pdfBlob, pdfTitle, message]);
+    const handleSharePdf = useCallback(async () => { if (!navigator.share) { message.error('Share tidak didukung.'); return; } if (!pdfBlob) return; const fn = `${pdfTitle.replace(/ /g, '_') || 'file'}.pdf`; const file = new File([pdfBlob], fn, { type: 'application/pdf' }); const shareData = { title: pdfTitle, text: `File: ${pdfTitle}`, files: [file] }; if (navigator.canShare && navigator.canShare(shareData)) { try { await navigator.share(shareData); message.success('Dibagikan!'); } catch (err) { if (err.name !== 'AbortError') message.error(`Gagal: ${err.message}`); } } else { message.warn('Share file tidak didukung.'); } }, [pdfBlob, pdfTitle, message]);
 
 
     // --- Definisi Kolom Tabel (Pakai useCallback untuk Aksi) ---
@@ -276,17 +403,17 @@ export default function TransaksiJualPage() {
                         <Col xs={24} lg={8}>
                             {/* PERBAIKAN WARNING: bordered={false} -> variant="borderless" */}
                             <Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}>
-                                <Statistic title={`Total Tagihan (${isFiltering ? 'Filter Aktif' : 'Semua'})`} value={recapData.totalTagihan} formatter={formatCurrency} />
+                                <Statistic title={`Total Tagihan (${recapData.isFilterActive ? 'Filter Aktif' : 'Semua'})`} value={recapData.totalTagihan} formatter={formatCurrency} />
                             </Card>
                         </Col>
                         <Col xs={24} lg={8}>
                              <Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}>
-                                <Statistic title={`Total Terbayar (${isFiltering ? 'Filter Aktif' : 'Semua'})`} value={recapData.totalTerbayar} formatter={formatCurrency} valueStyle={{ color: '#3f8600' }} suffix={`(${paidPercent.toFixed(1)}%)`} />
+                                <Statistic title={`Total Terbayar (${recapData.isFilterActive ? 'Filter Aktif' : 'Semua'})`} value={recapData.totalTerbayar} formatter={formatCurrency} valueStyle={{ color: '#3f8600' }} suffix={`(${paidPercent.toFixed(1)}%)`} />
                             </Card>
                         </Col>
                         <Col xs={24} lg={8}>
                              <Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}>
-                                <Statistic title={`Total Sisa (${isFiltering ? 'Filter Aktif' : 'Semua'})`} value={recapData.sisaTagihan} formatter={formatCurrency} valueStyle={{ color: recapData.sisaTagihan > 0 ? '#cf1322' : '#3f8600' }} suffix={`(${outstandingPercent.toFixed(1)}%)`} />
+                                <Statistic title={`Total Sisa (${recapData.isFilterActive ? 'Filter Aktif' : 'Semua'})`} value={recapData.sisaTagihan} formatter={formatCurrency} valueStyle={{ color: recapData.sisaTagihan > 0 ? '#cf1322' : '#3f8600' }} suffix={`(${outstandingPercent.toFixed(1)}%)`} />
                             </Card>
                         </Col>
                     </Row>
@@ -321,7 +448,7 @@ export default function TransaksiJualPage() {
                         columns={columns}
                         dataSource={filteredTransaksi}
                         loading={loadingTransaksi} // Hanya loading fetch awal
-                        isFiltering={isFiltering} // Loading filter/search/page
+                        isFiltering={isFiltering} // <-- Gunakan isFiltering baru
                         pagination={pagination}
                         handleTableChange={handleTableChange}
                         tableScrollX={tableScrollX}
@@ -331,7 +458,7 @@ export default function TransaksiJualPage() {
                 {/* --- Modal Form Create/Edit --- */}
                  {/* Render kondisional agar state di dalamnya fresh saat dibuka */}
                  {isFormModalOpen && (
-                    <TransaksiJualForm
+                     <TransaksiJualForm
                         key={editingTx?.id || 'create'} // Penting untuk reset form
                         open={isFormModalOpen}
                         onCancel={handleCloseFormModal}
@@ -384,3 +511,5 @@ export default function TransaksiJualPage() {
         </Layout> // Akhir Layout
     );
 }
+
+

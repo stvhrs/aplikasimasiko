@@ -40,6 +40,7 @@ export const NavigationMenu = ({ activeKey, onLinkClick }) => {
         <Link to="/pelanggan">Data Pelanggan</Link>
       </Menu.Item>
      
+     
     </Menu>
   );
 };
