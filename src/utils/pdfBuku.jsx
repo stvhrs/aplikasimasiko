@@ -13,7 +13,7 @@ export const generateBukuPdfBlob = (dataToExport, headerInfo = {}) => {
     const {
         cvName = "CV. GANGSAR MULIA UTAMA",
         address = "Jl. Kalicari Dalam I No.4, Kalicari, Kec. Pedurungan, Kota Semarang, Jawa Tengah 50198",
-        phone = "0812-3456-7890" 
+        phone = "0882-0069-05391" 
     } = headerInfo;
 
     const doc = new jsPDF('vertical');

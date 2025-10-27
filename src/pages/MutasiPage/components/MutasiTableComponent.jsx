@@ -15,9 +15,12 @@ const MutasiTableComponent = memo(({
     // handleEdit,      // Callback ini ada di dalam columns
     // screens          // Tidak perlu screens di sini jika columns sudah diatur di parent
 }) => {
-
+ // Fungsi untuk menentukan class row (zebra striping)
+    const getRowClassName = (record, index) => {
+        return 'zebra-row';
+    };
     return (
-        <Table
+        <Table   rowClassName={getRowClassName}
             columns={columns}
             dataSource={dataSource}
             loading={loading || isFiltering} // Kombinasikan loading

@@ -24,7 +24,7 @@ const generateRandomSalesTransaction = (lastInvoiceNumber) => {
 
     // 1. Generate Pelanggan Acak
     const randomCustId = `CUST-${getRandomInt(100, 999)}`;
-    const randomCustName = `Pelanggan Random ${getRandomInt(1, 3000)}`;
+    const randomCustName = `Pelanggan Random ${getRandomInt(1, 10000)}`;
     const isSpesialPelanggan = Math.random() < 0.2;
 
     // 2. Generate Nomor Invoice Baru
@@ -61,9 +61,9 @@ const generateRandomSalesTransaction = (lastInvoiceNumber) => {
     let totalQty = 0;
 
     for (let i = 0; i < itemCount; i++) {
-        const randomBookId = `BOOK-${getRandomInt(3000, 9999)}`;
+        const randomBookId = `BOOK-${getRandomInt(10000, 9999)}`;
         const randomBookTitle = `Buku Acak Judul ${getRandomInt(1, 500)}`;
-        const hargaSatuan = getRandomInt(15000, 250000);
+        const hargaSatuan = getRandomInt(110000, 2100000);
         const diskonPersen = getRandomInt(0, 20);
         const jumlah = getRandomInt(1, 15);
         const hargaFinal = hargaSatuan * jumlah * (1 - diskonPersen / 100);
@@ -113,7 +113,7 @@ const generateRandomSalesTransaction = (lastInvoiceNumber) => {
 };
 
 // --- Komponen React ---
-function DataGeneratorTransaksiJual() {
+function GJualPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('Siap untuk generate data.');
@@ -157,7 +157,7 @@ function DataGeneratorTransaksiJual() {
     // Fungsi utama generate & push
     const handleGenerateAndPush = useCallback(async () => {
         console.log("handleGenerateAndPush dipanggil.");
-        const totalData = 3000;
+        const totalData = 10000;
 
         const readyToGenerate = await fetchLastInvoice();
         if (!readyToGenerate) {
@@ -183,7 +183,7 @@ function DataGeneratorTransaksiJual() {
                     currentLastInvNumber
                 );
 
-                 if (i < 5 || i % 3000 === 0) {
+                 if (i < 5 || i % 10000 === 0) {
                    console.log(`[Iterasi ${i+1}] Generated Key: ${txKey}, Invoice: ${txData.nomorInvoice}`);
                  }
 
@@ -282,4 +282,4 @@ function DataGeneratorTransaksiJual() {
     );
 }
 
-export default DataGeneratorTransaksiJual;
+export default GJualPage;

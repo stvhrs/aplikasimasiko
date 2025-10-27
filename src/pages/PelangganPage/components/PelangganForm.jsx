@@ -1,171 +1,148 @@
+// src/pages/pelanggan/components/PelangganForm.jsx
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, Button, Switch, Space, message } from 'antd';
-import { ref, set, update } from 'firebase/database';
-import { db } from '../../../api/firebase';
+import { Modal, Form, Input, Button, message, Checkbox, Spin,Space } from 'antd';
+import { db } from '../../../api/firebase'; // Sesuaikan path
+import { ref, set, update, push } from 'firebase/database';
 
-// ---------- Utils ----------
-const slugify = (str) => {
-  return String(str || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036F]/g, '')    // remove diacritics
-    .replace(/[^a-zA-Z0-9]+/g, '-')     // non-alnum -> dash
-    .replace(/^-+|-+$/g, '')            // trim dashes
-    .toLowerCase()
-    .slice(0, 24);                      // batasi agar key tidak kepanjangan
-};
+export default function PelangganForm({
+    open,
+    onCancel,
+    onSuccess,
+    initialData = null, // null for create, object for edit
+    pelangganList // Untuk cek duplikat (opsional tapi bagus)
+}) {
+    const [form] = Form.useForm();
+    const [isSaving, setIsSaving] = useState(false);
+    const isEditMode = !!initialData;
 
-const rand4hex = () => Math.floor(Math.random() * 0xffff).toString(16).padStart(4,'0');
+    useEffect(() => {
+        if (isEditMode && initialData) {
+            console.log("Prefilling PelangganForm with:", initialData);
+            try {
+                form.setFieldsValue({
+                    nama: initialData.nama || '',
+                    telepon: initialData.telepon || '',
+                    isSpesial: initialData.isSpesial || false,
+                    // Tambahkan field lain jika ada (alamat, email, dll)
+                });
+            } catch (error) {
+                console.error("Error prefilling form:", error);
+                message.error("Gagal memuat data pelanggan.");
+                onCancel(); // Tutup jika gagal prefill
+            }
+        } else {
+             console.log("Resetting PelangganForm for create.");
+            form.resetFields(); // Pastikan bersih saat mode create
+        }
+        // Hanya reset/prefill saat initialData berubah ATAU saat open berubah dari false ke true
+    }, [initialData, form, isEditMode, open, onCancel]);
 
-const yyyymmdd = (d = new Date()) =>
-  `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const handleFinish = async (values) => {
+        setIsSaving(true);
+        message.loading({ content: 'Menyimpan data pelanggan...', key: 'save_pelanggan' });
 
-const generatePelangganId = (nama) => {
-  const date = yyyymmdd();
-  const slug = slugify(nama) || 'anon';
-  return `PLG-${date}-${slug}-${rand4hex()}`;
-};
+        try {
+            const dataToSave = {
+                nama: values.nama.trim(),
+                telepon: values.telepon?.trim() || '', // Handle jika kosong
+                isSpesial: values.isSpesial || false,
+                // Tambahkan field lain jika ada
+            };
 
-const trimAll = (v) => (typeof v === 'string' ? v.trim() : v);
+            // Validasi nama tidak boleh kosong
+            if (!dataToSave.nama) {
+                throw new Error("Nama pelanggan tidak boleh kosong.");
+            }
 
-// ---------- Component ----------
-const PelangganForm = ({ open, onCancel, initialValues }) => {
-  const [form] = Form.useForm();
-  const isEditing = !!initialValues?.id;
-  const [submitting, setSubmitting] = useState(false);
+            // (Opsional) Cek duplikat nama/telepon (kecuali edit data yg sama)
+            const duplicateExists = pelangganList.some(p =>
+                (p.nama.toLowerCase() === dataToSave.nama.toLowerCase() || (dataToSave.telepon && p.telepon === dataToSave.telepon)) &&
+                (!isEditMode || p.id !== initialData.id) // Abaikan jika ID sama saat edit
+            );
+            if (duplicateExists) {
+                throw new Error("Nama atau nomor telepon pelanggan sudah ada.");
+            }
 
-  useEffect(() => {
-    if (open) {
-      form.resetFields();
-      if (isEditing) {
-        form.setFieldsValue({
-          nama: initialValues.nama ?? '',
-          telepon: initialValues.telepon ?? '',
-          isSpesial: !!initialValues.isSpesial,
-        });
-      } else {
-        form.setFieldsValue({
-          nama: '',
-          telepon: '',
-          isSpesial: false,
-        });
-      }
-    }
-  }, [open, isEditing, initialValues, form]);
 
-  const onFinish = async (values) => {
-    const cleanNama = trimAll(values.nama);
-    const cleanTelepon = trimAll(values.telepon);
+            if (isEditMode) {
+                // Update data
+                const pelangganRef = ref(db, `pelanggan/${initialData.id}`);
+                await update(pelangganRef, dataToSave);
+                message.success({ content: 'Data pelanggan berhasil diperbarui', key: 'save_pelanggan' });
+            } else {
+                // Create data baru
+                const pelangganRef = ref(db, 'pelanggan');
+                const newPelangganRef = push(pelangganRef); // Generate unique ID
+                await set(newPelangganRef, dataToSave);
+                message.success({ content: 'Pelanggan baru berhasil ditambahkan', key: 'save_pelanggan' });
+            }
+            form.resetFields();
+            onSuccess(); // Panggil callback sukses (menutup modal)
 
-    const payload = {
-      nama: cleanNama,
-      telepon: cleanTelepon,
-      isSpesial: !!values.isSpesial,
-      slugNama: slugify(cleanNama),
-      updatedAt: Date.now(),
+        } catch (error) {
+            console.error("Error saving pelanggan:", error);
+            message.error({ content: `Gagal menyimpan: ${error.message}`, key: 'save_pelanggan', duration: 5 });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    try {
-      setSubmitting(true);
-
-      if (isEditing) {
-        // UPDATE ke /pelanggan/{id} — NAMA BOLEH DIUBAH
-        const pelangganRef = ref(db, `pelanggan/${initialValues.id}`);
-        await update(pelangganRef, payload);
-        message.success(`Data ${cleanNama} berhasil diubah.`);
-      } else {
-        // CREATE dengan ID custom yang rapi
-        const newId = generatePelangganId(cleanNama);
-        const createdPayload = {
-          ...payload,
-          id: newId,
-          createdAt: Date.now(),
-        };
-        const pelangganRef = ref(db, `pelanggan/${newId}`);
-        await set(pelangganRef, createdPayload);
-        message.success(`Pelanggan ${cleanNama} berhasil ditambahkan.`);
-      }
-
-      onCancel?.();
-    } catch (error) {
-      console.error('Gagal menyimpan data:', error);
-      message.error('Gagal menyimpan data pelanggan.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      title={isEditing ? 'Edit Data Pelanggan' : 'Tambah Pelanggan Baru'}
-      onCancel={onCancel}
-      footer={null}
-      destroyOnClose
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={onFinish}
-        initialValues={{ isSpesial: false }}
-      >
-        <Form.Item
-          name="nama"
-          label="Nama Pelanggan"
-          rules={[
-            { required: true, message: 'Nama wajib diisi' },
-           
-            {
-              validator: (_, value) => {
-                const v = trimAll(value);
-                if (!v) return Promise.reject('Nama wajib diisi');
-                if (v.length < 3) return Promise.reject('Nama minimal 3 karakter.');
-                return Promise.resolve();
-              },
-            },
-          ]}
-          normalize={trimAll}
+    return (
+        <Modal
+            title={isEditMode ? 'Edit Pelanggan' : 'Tambah Pelanggan Baru'}
+            open={open}
+            onCancel={onCancel}
+            footer={null} // Custom footer di dalam Form
+            destroyOnClose
+            maskClosable={false}
         >
-          <Input placeholder="Nama pelanggan/instansi" allowClear />
-        </Form.Item>
+            <Spin spinning={isSaving}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={handleFinish}
+                    initialValues={{ isSpesial: false }} // Default value untuk checkbox
+                >
+                    <Form.Item
+                        name="nama"
+                        label="Nama Pelanggan"
+                        rules={[{ required: true, message: 'Nama tidak boleh kosong!' }, { whitespace: true, message: 'Nama tidak boleh hanya spasi!' }]}
+                    >
+                        <Input placeholder="Masukkan nama lengkap pelanggan" />
+                    </Form.Item>
 
-        <Form.Item
-          name="telepon"
-          label="No. Telepon"
-          rules={[
-            { required: true, message: 'Nomor telepon tidak boleh kosong!' },
-            {
-              validator: (_, value) => {
-                const v = trimAll(value);
-                if (!v) return Promise.reject('Nomor telepon tidak boleh kosong!');
-                if (!/^\+?\d{8,20}$/.test(v)) {
-                  return Promise.reject('Nomor telepon harus digit (boleh diawali +).');
-                }
-                return Promise.resolve();
-              },
-            },
-          ]}
-          normalize={trimAll}
-        >
-          <Input placeholder="0812xxxxxxx" allowClear />
-        </Form.Item>
+                    <Form.Item
+                        name="telepon"
+                        label="Nomor Telepon"
+                        rules={[
+                             // Opsional, tapi jika diisi, harus angka
+                            { pattern: /^[0-9+-\s()]*$/, message: 'Hanya masukkan angka, spasi, +, -, (, )' }
+                        ]}
+                    >
+                        <Input placeholder="Contoh: 08123456789" />
+                    </Form.Item>
 
-        <Form.Item
-          name="isSpesial"
-          label="Status Pelanggan Spesial"
-          valuePropName="checked"
-        >
-          <Switch checkedChildren="Spesial" unCheckedChildren="Biasa" />
-        </Form.Item>
+                    {/* Tambahkan field lain di sini jika perlu (Alamat, Email, dll) */}
+                    {/* <Form.Item name="alamat" label="Alamat">
+                        <Input.TextArea placeholder="Alamat lengkap" />
+                    </Form.Item> */}
 
-        <Space style={{ marginTop: 24, width: '100%', justifyContent: 'flex-end' }}>
-          <Button onClick={onCancel} disabled={submitting}>Batal</Button>
-          <Button type="primary" htmlType="submit" loading={submitting}>
-            {isEditing ? 'Simpan Perubahan' : 'Tambah Pelanggan'}
-          </Button>
-        </Space>
-      </Form>
-    </Modal>
-  );
-};
+                    <Form.Item name="isSpesial" valuePropName="checked">
+                        <Checkbox>Pelanggan Spesial (Harga & Diskon Khusus)</Checkbox>
+                    </Form.Item>
 
-export default PelangganForm;
+                    <div style={{ textAlign: 'right', marginTop: 24 }}>
+                        <Space>
+                            <Button onClick={onCancel} disabled={isSaving}>
+                                Batal
+                            </Button>
+                            <Button type="primary" htmlType="submit" loading={isSaving}>
+                                {isEditMode ? 'Simpan Perubahan' : 'Tambah Pelanggan'}
+                            </Button>
+                        </Space>
+                    </div>
+                </Form>
+            </Spin>
+        </Modal>
+    );
+}

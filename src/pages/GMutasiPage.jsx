@@ -61,7 +61,7 @@ const generateDummyData = async (db, onProgress) => {
   }
 };
 
-const DataGeneratorPage = () => {
+const GMutasiPage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -104,4 +104,4 @@ const DataGeneratorPage = () => {
   );
 };
 
-export default DataGeneratorPage;
+export default GMutasiPage;

@@ -4,29 +4,19 @@ import { ref, onValue } from "firebase/database";
 import { db } from '../../api/firebase'; // Pastikan path ini benar
 
 // --- Cache & Listener Global ---
-// Didefinisikan di luar hook agar "selamat" dari unmount komponen
+let pelangganCache = [];
+let listeners = [];
+let isInitialized = false;
+let isLoading = false; // Status loading *global listener*
+let globalUnsubscribe = null;
 
-let pelangganCache = []; // Menyimpan data terakhir
-let listeners = []; // Menyimpan semua fungsi `setData` dari komponen yang aktif
-let isInitialized = false; // Status: Apakah fetch *pertama kali* sudah selesai?
-let isLoading = false; // Status: Apakah sedang dalam proses fetch *pertama kali*?
-let globalUnsubscribe = null; // Menyimpan fungsi `off()` dari onValue
-
-/**
- * Menyiarkan data baru ke semua komponen yang sedang "mendengarkan".
- */
 function notifyListeners() {
   listeners.forEach((listener) => {
     listener(pelangganCache);
   });
 }
 
-/**
- * Fungsi ini hanya akan dipanggil SATU KALI selama siklus hidup aplikasi.
- * Fungsi ini menyiapkan listener streaming ke Firebase RTDB.
- */
 function initializeListener() {
-  // Jika sudah ada listener atau sedang dalam proses loading, jangan buat baru.
   if (globalUnsubscribe || isLoading) {
     return;
   }
@@ -38,24 +28,25 @@ function initializeListener() {
     pelangganRef,
     (snapshot) => {
       const val = snapshot.val();
-      // Ubah objek dari Firebase menjadi array
-      const arr = val ? Object.values(val) : [];
-      
-      // Update cache global
+      // --- (PERBAIKAN) Transformasi data untuk menyertakan ID ---
+      const arr = val
+        ? Object.keys(val).map(key => ({ id: key, ...val[key] }))
+        : [];
+      // --------------------------------------------------------
+
       pelangganCache = arr;
       isInitialized = true;
       isLoading = false;
-      
-      // Siarkan data baru ke semua komponen
+
+      console.log("Pelanggan data fetched/updated:", pelangganCache); // Log data
       notifyListeners();
     },
     (error) => {
-      console.error("RTDB error:", error);
-      // Tetap selesaikan proses agar loading hilang
-      pelangganCache = [];
-      isInitialized = true;
+      console.error("RTDB error (pelanggan):", error);
+      pelangganCache = []; // Reset cache on error
+      isInitialized = true; // Tandai sebagai selesai meski error
       isLoading = false;
-      notifyListeners();
+      notifyListeners(); // Tetap notifikasi agar loading hilang
     }
   );
 }
@@ -64,40 +55,53 @@ function initializeListener() {
 
 /**
  * Custom hook untuk mendapatkan data pelanggan secara live.
- * Menggunakan listener global tunggal untuk efisiensi.
  */
 export function usePelangganData() {
-  // 1. State lokal, diinisialisasi dengan data dari cache global
+  // 1. State lokal, diinisialisasi dengan cache
   const [data, setData] = useState(pelangganCache);
-  
-  // 2. Tampilkan loading HANYA jika data belum pernah diinisialisasi
+
+  // 2. State loading LOKAL komponen, tergantung status global
   const [loading, setLoading] = useState(!isInitialized);
 
   useEffect(() => {
-    // 3. Jika listener global belum aktif, aktifkan
-    if (!globalUnsubscribe) {
+    // 3. Inisialisasi listener global jika belum
+    if (!globalUnsubscribe && !isLoading) { // Cek isLoading juga
       initializeListener();
     }
 
-    // 4. Daftarkan fungsi `setData` dari komponen INI ke daftar listener global
-    listeners.push(setData);
+    // --- (PERBAIKAN) Wrapper untuk setData agar bisa update loading ---
+    const handleDataUpdate = (newData) => {
+        setData(newData);
+        // Jika listener global sudah selesai (isInitialized=true)
+        // DAN state loading lokal masih true, set loading lokal ke false.
+        if (isInitialized && loading) {
+            setLoading(false);
+        }
+    };
+    // --------------------------------------------------------------
 
-    // 5. Jika data sudah terinisialisasi (misal, pindah halaman),
-    //    pastikan data di komponen ini sinkron & loading=false.
+    // 4. Daftarkan wrapper listener
+    listeners.push(handleDataUpdate);
+
+    // 5. Sinkronisasi saat mount jika data sudah ada & matikan loading
     if (isInitialized) {
-      setData(pelangganCache);
-      setLoading(false);
+      setData(pelangganCache); // Pastikan data terbaru
+      setLoading(false);      // Matikan loading jika sudah init
+    } else {
+        // Jika belum init, pastikan loading=true (walau defaultnya sudah)
+        setLoading(true);
     }
 
-    // 6. Fungsi cleanup saat komponen unmount
-    return () => {
-      // Hapus fungsi `setData` komponen INI dari daftar global
-      listeners = listeners.filter((cb) => cb !== setData);
-      
-      // !! PENTING: JANGAN panggil globalUnsubscribe() di sini.
-      // Kita ingin listener tetap hidup meski komponen di-unmount.
-    };
-  }, []); // Array dependensi kosong, hanya berjalan saat mount & unmount
 
-  return { data, loading };
+    // 6. Cleanup saat unmount
+    return () => {
+      // Hapus wrapper listener dari daftar global
+      listeners = listeners.filter((cb) => cb !== handleDataUpdate);
+
+      // JANGAN UNSUBSCRIBE LISTENER GLOBAL DI SINI
+    };
+  }, [loading]); // (PERBAIKAN) Tambahkan `loading` sebagai dependensi
+
+  // Return state lokal
+  return { pelangganList: data, loadingPelanggan: loading }; // Sesuaikan nama return
 }
