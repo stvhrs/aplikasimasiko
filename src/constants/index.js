@@ -1,4 +1,4 @@
- 
+
 export const TipeTransaksi = {
   pemasukan: 'pemasukan',
   pengeluaran: 'pengeluaran',
@@ -12,11 +12,11 @@ export const KategoriPemasukan = {
 };
 
 export const KategoriPengeluaran = {
-  bahan_baku: "Pembelian Bahan Baku",
+
   komisi: "Komisi",
 
   gaji_produksi: "Gaji Karyawan",
   operasional: "Operasional",
- donasi_csr:"Donasi/CSR",
+
   pengeluaran_lain: "Pengeluaran Lain-lain",
 };

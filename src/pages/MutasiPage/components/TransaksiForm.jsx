@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
     Modal, Form, Input, InputNumber, DatePicker, Radio, Select, Upload, Button, Card, Empty, Typography, Spin,
-    message // <-- Ditambahkan
+    message // <-- Sudah ada
 } from 'antd';
-import { UploadOutlined, DeleteOutlined } from '@ant-design/icons'; // <-- Ditambahkan
+import { UploadOutlined, DeleteOutlined } from '@ant-design/icons'; // <-- Sudah ada
 import dayjs from 'dayjs';
+import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../../../constants';
 
 // --- Impor Firebase ---
 import { db, storage } from '../../../api/firebase';
@@ -16,26 +17,7 @@ import { v4 as uuidv4 } from 'uuid';
 const { Text } = Typography;
 const { Option } = Select;
 
-// ====================== CONSTANTS ======================
-const TipeTransaksi = {
-    pemasukan: 'pemasukan',
-    pengeluaran: 'pengeluaran',
-};
-
-const KategoriPemasukan = {
-    'Penjualan Buku': 'Penjualan Buku',
-    'Jasa Cetak Buku': 'Jasa Cetak Buku',
-    'Pemasukan Lain-lain': 'Pemasukan Lain-lain',
-    'Penjualan Sisa Kertas': 'Penjualan Sisa Kertas',
-};
-
-const KategoriPengeluaran = {
-    'Operasional': 'Operasional',
-    'Gaji': 'Gaji',
-    'Pembelian Bahan Baku': 'Pembelian Bahan Baku',
-    'Pengeluaran Lain-lain': 'Pengeluaran Lain-lain',
-};
-const INVOICE_PAYMENT_CATEGORIES = ['Penjualan Buku', 'Jasa Cetak Buku'];
+const INVOICE_PAYMENT_CATEGORIES = ['Penjualan Buku',];
 
 // ====================== UTILITIES ======================
 const currencyFormatter = (value) =>
@@ -56,7 +38,7 @@ const TransaksiForm = ({
 
     // --- State Internal Baru ---
     const [isSaving, setIsSaving] = useState(false);
-    const [modal, contextHolder] = Modal.useModal();
+    const [modal, contextHolder] = Modal.useModal(); // <-- Sudah ada
     // --- Akhir State Internal Baru ---
 
     const watchingTipe = Form.useWatch('tipe', form);
@@ -190,6 +172,7 @@ const TransaksiForm = ({
                 await uploadBytes(fileRef, buktiFile, { contentType: buktiFile.type });
                 buktiUrl = await getDownloadURL(fileRef);
             } else if (initialValues && !bukti) {
+                // Jika file dihapus (bukti kosong) saat edit
                 buktiUrl = null;
             }
 
@@ -238,17 +221,18 @@ const TransaksiForm = ({
                 let currentPaid = invoiceData.jumlahTerbayar || 0;
                 let currentHistory = invoiceData.riwayatPembayaran || {};
 
-                // **PERUBAHAN DI SINI: Menambahkan 'keterangan'**
                 if (isEditing) {
                     if (oldInvoiceId === dataLain.idTransaksi) {
+                        // Invoice tidak berubah, hanya update jumlah
                         currentPaid = (currentPaid - oldPaymentAmount) + newPaymentAmount;
-                        currentHistory[mutasiId] = { 
-                            tanggal: dataLain.tanggal.valueOf(), 
-                            jumlah: newPaymentAmount, 
-                            mutasiId: mutasiId, 
-                            keterangan: dataToSave.keterangan // <-- DITAMBAHKAN
+                        currentHistory[mutasiId] = {
+                            tanggal: dataLain.tanggal.valueOf(),
+                            jumlah: newPaymentAmount,
+                            mutasiId: mutasiId,
+                            keterangan: dataToSave.keterangan
                         };
                     } else {
+                        // Invoice berubah (misal salah pilih), kembalikan data lama dulu
                         if (oldInvoiceId && oldInvoiceType) {
                             const oldInvoiceDbPath = oldInvoiceType === 'Penjualan Buku' ? 'transaksiJualBuku' : 'transaksiCetakBuku';
                             const oldInvoiceRef = ref(db, `${oldInvoiceDbPath}/${oldInvoiceId}`);
@@ -264,24 +248,25 @@ const TransaksiForm = ({
                                 updates[`${oldInvoiceDbPath}/${oldInvoiceId}/statusPembayaran`] = oldStatus;
                             }
                         }
+                        // Tambahkan ke invoice baru
                         currentPaid = currentPaid + newPaymentAmount;
-                        currentHistory[mutasiId] = { 
-                            tanggal: dataLain.tanggal.valueOf(), 
-                            jumlah: newPaymentAmount, 
+                        currentHistory[mutasiId] = {
+                            tanggal: dataLain.tanggal.valueOf(),
+                            jumlah: newPaymentAmount,
                             mutasiId: mutasiId,
-                            keterangan: dataToSave.keterangan // <-- DITAMBAHKAN
+                            keterangan: dataToSave.keterangan
                         };
                     }
                 } else {
+                    // Mode Tambah Baru
                     currentPaid = currentPaid + newPaymentAmount;
-                    currentHistory[mutasiId] = { 
-                        tanggal: dataLain.tanggal.valueOf(), 
-                        jumlah: newPaymentAmount, 
+                    currentHistory[mutasiId] = {
+                        tanggal: dataLain.tanggal.valueOf(),
+                        jumlah: newPaymentAmount,
                         mutasiId: mutasiId,
-                        keterangan: dataToSave.keterangan // <-- DITAMBAHKAN
+                        keterangan: dataToSave.keterangan
                     };
                 }
-                // **AKHIR PERUBAHAN**
 
                 const newStatus = (currentPaid <= 0) ? 'Belum Bayar' : (currentPaid >= invoiceData.totalTagihan) ? 'Lunas' : 'DP';
                 updates[`${invoiceDbPath}/${dataLain.idTransaksi}/jumlahTerbayar`] = currentPaid;
@@ -306,6 +291,7 @@ const TransaksiForm = ({
 
                 updates[`mutasi/${mutasiId}`] = dataToSave;
 
+                // Jika ini adalah EDITING, dan sebelumnya dia adalah pembayaran invoice
                 if (isEditing && oldInvoiceId && oldInvoiceType) {
                     const oldInvoiceDbPath = oldInvoiceType === 'Penjualan Buku' ? 'transaksiJualBuku' : 'transaksiCetakBuku';
                     const oldInvoiceRef = ref(db, `${oldInvoiceDbPath}/${oldInvoiceId}`);
@@ -334,6 +320,9 @@ const TransaksiForm = ({
         }
     };
 
+    // ==========================================================
+    // --- FUNGSI HAPUS ---
+    // ==========================================================
     const handleDelete = () => {
         if (!initialValues) return;
 
@@ -350,8 +339,10 @@ const TransaksiForm = ({
                     const mutasiId = initialValues.id;
                     const updates = {};
 
+                    // 1. Hapus data mutasi
                     updates[`mutasi/${mutasiId}`] = null;
 
+                    // 2. Cek dan update invoice terkait
                     if (initialValues.idTransaksi && initialValues.tipeTransaksi) {
                         const paymentAmount = Math.abs(initialValues.jumlahBayar || initialValues.jumlah || 0);
                         const invoiceDbPath = initialValues.tipeTransaksi === 'Penjualan Buku'
@@ -362,10 +353,13 @@ const TransaksiForm = ({
                         const invoiceSnapshot = await get(invoiceRef);
                         if (invoiceSnapshot.exists()) {
                             const invoiceData = invoiceSnapshot.val();
+                            // Kurangi jumlah terbayar
                             const currentPaid = (invoiceData.jumlahTerbayar || 0) - paymentAmount;
+                            // Hapus dari riwayat
                             const currentHistory = invoiceData.riwayatPembayaran || {};
-                            delete currentHistory[mutasiId];
+                            delete currentHistory[mutasiId]; 
 
+                            // Tentukan status baru
                             const newStatus = (currentPaid <= 0) ? 'Belum Bayar' : (currentPaid >= invoiceData.totalTagihan) ? 'Lunas' : 'DP';
 
                             updates[`${invoiceDbPath}/${initialValues.idTransaksi}/jumlahTerbayar`] = currentPaid;
@@ -374,10 +368,11 @@ const TransaksiForm = ({
                         }
                     }
 
+                    // 3. Eksekusi semua update
                     await update(ref(db), updates);
 
                     message.success({ content: 'Mutasi berhasil dihapus', key: 'deleting', duration: 2 });
-                    onCancel();
+                    onCancel(); // Tutup modal setelah berhasil
                 } catch (error) {
                     console.error("Gagal menghapus:", error);
                     message.error({ content: `Gagal menghapus: ${error.message}`, key: 'deleting', duration: 4 });
@@ -387,6 +382,10 @@ const TransaksiForm = ({
             },
         });
     };
+    // ==========================================================
+    // --- AKHIR FUNGSI HAPUS ---
+    // ==========================================================
+
 
     return (
         <Modal
@@ -395,20 +394,27 @@ const TransaksiForm = ({
             onCancel={onCancel}
             destroyOnClose
             confirmLoading={isSaving}
+            // ==========================================================
+            // --- FOOTER DENGAN TOMBOL HAPUS ---
+            // ==========================================================
             footer={[
-                contextHolder,
+                contextHolder, // Untuk Modal.confirm
+                
+                // INI ADALAH TOMBOL HAPUSNYA
                 initialValues && (
                     <Button
                         key="delete"
                         danger
                         icon={<DeleteOutlined />}
                         onClick={handleDelete}
-                        style={{ float: 'left' }}
+                        style={{ float: 'left' }} // Pindahkan ke kiri
                         loading={isSaving}
                     >
                         Hapus
                     </Button>
                 ),
+                // BATAS TOMBOL HAPUS
+
                 <Button key="back" onClick={onCancel} disabled={isSaving}>
                     Batal
                 </Button>,
@@ -416,6 +422,9 @@ const TransaksiForm = ({
                     Simpan
                 </Button>,
             ]}
+            // ==========================================================
+            // --- AKHIR FOOTER ---
+            // ==========================================================
         >
             <Form form={form} layout="vertical" name="transaksi_form">
                 <Form.Item name="tanggal" label="Tanggal Pembayaran" rules={[{ required: true, message: 'Tanggal wajib diisi!' }]}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'; // (PERUBAHAN) Tambah useDeferredValue
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
 import {
     Layout, Card, Table, Tag, Button, Modal, Input, Space, Typography, Row, Col,
     message, Tooltip, Empty, Grid, DatePicker, Spin, Divider
@@ -6,31 +6,22 @@ import {
 import {
     PlusOutlined, EditOutlined, EyeOutlined, SyncOutlined, DownloadOutlined, ShareAltOutlined
 } from '@ant-design/icons';
-// --- Impor Firebase Disederhanakan ---
-// Hapus import firebase/database karena sudah di hook
-// import { db } from '../../api/firebase'; // db diambil dari hook
 import dayjs from 'dayjs';
 import 'dayjs/locale/id';
 import {
     currencyFormatter, numberFormatter, percentFormatter, generateFilters
-} from '../../utils/formatters';
-// --- Impor Hook Singleton ---
-import { useMutasiData, useUnpaidInvoicesData } from './listendata'
-; // (PERUBAHAN) Sesuaikan path jika perlu
-// ----------------------------
-
+} from '../../utils/formatters'; // Pastikan path ini benar
+import { useMutasiData, useUnpaidInvoicesData } from './listendata'; // Pastikan path ini benar
 import useDebounce from '../../hooks/useDebounce'; // Pastikan path ini benar
 import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../../constants'; // Pastikan path ini benar
 
-// --- (BARU) Impor fungsi PDF ---
 import { generateMutasiPdf } from '../../utils/pdfMutas'; // Pastikan path ini benar
 
 import RekapitulasiCard from './components/RekapitulasiCard'; // Pastikan path ini benar
 import KategoriChips from './components/KategoriChips'; // Pastikan path ini benar
 
 // Impor komponen-komponen baru
-// Pastikan path ini benar
-import TransaksiForm from './components/TransaksiForm';
+import TransaksiForm from './components/TransaksiForm'; // Pastikan path ini benar
 import PdfPreviewModal from '../BukuPage/components/PdfPreviewModal'; // Sesuaikan path
 
 dayjs.locale('id');
@@ -39,23 +30,16 @@ const { Content } = Layout;
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-// --- (PERUBAHAN) Fungsi untuk Zebra Row ---
 const getRowClassName = (record, index) => {
     return index % 2 === 0 ? 'table-row-even' : 'table-row-odd';
 };
 const chipStyle = { border: '1px solid #d9d9d9', padding: '4px 10px', borderRadius: '16px', minWidth: '130px', textAlign: 'center' };
-// ----------------------------------------
+
 const MutasiPage = () => {
-    // --- (PERUBAHAN) Gunakan Hook Singleton ---
     const { mutasiList, loadingMutasi } = useMutasiData();
     const { unpaidJual, unpaidCetak, loadingInvoices } = useUnpaidInvoicesData();
-    // ------------------------------------------
-
-    // --- (PERUBAHAN) State Loading Awal Gabungan ---
     const initialLoading = loadingMutasi || loadingInvoices;
-    // ---------------------------------------------
 
-    // State Filter (Sama)
     const [filters, setFilters] = useState({
         dateRange: null,
         selectedTipe: [],
@@ -63,60 +47,44 @@ const MutasiPage = () => {
         searchText: '',
     });
 
-    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, showSizeChanger: true }); // Tambah showSizeChanger
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, showSizeChanger: true });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTransaksi, setEditingTransaksi] = useState(null);
     const [isProofModalOpen, setIsProofModalOpen] = useState(false);
     const [viewingProofUrl, setViewingProofUrl] = useState('');
     const [isProofLoading, setIsProofLoading] = useState(false);
-
-    // State PDF Preview (Sama)
     const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
     const [pdfFileName, setPdfFileName] = useState('');
 
     const screens = Grid.useBreakpoint();
+    const debouncedSearchText = useDebounce(filters.searchText, 300);
 
-    // --- (PERBAIKAN) Pindahkan useDebounce ke sini ---
-    const debouncedSearchText = useDebounce(filters.searchText, 300); // Debounce search text
-    // ------------------------------------------------
-
-    // --- Defer Value untuk data utama & filter ---
     const deferredMutasiList = useDeferredValue(mutasiList);
-    const deferredSearch = useDeferredValue(debouncedSearchText); // Gunakan debounced value di sini
+    const deferredSearch = useDeferredValue(debouncedSearchText);
     const deferredDateRange = useDeferredValue(filters.dateRange);
     const deferredSelectedTipe = useDeferredValue(filters.selectedTipe);
     const deferredSelectedKategori = useDeferredValue(filters.selectedKategori);
-    // ----------------------------------------------------
 
-    // --- State isFiltering berdasarkan perbandingan deferred ---
     const isFiltering =
         mutasiList !== deferredMutasiList ||
-        debouncedSearchText !== deferredSearch || // Bandingkan debounced vs deferred debounced
+        debouncedSearchText !== deferredSearch ||
         filters.dateRange !== deferredDateRange ||
         filters.selectedTipe !== deferredSelectedTipe ||
         filters.selectedKategori !== deferredSelectedKategori;
-    // -------------------------------------------------------------------
 
-    // --- DEFINISIKAN KEMBALI isFilterActive ---
     const isFilterActive = !!filters.dateRange || filters.selectedTipe.length > 0 || filters.selectedKategori.length > 0 || !!filters.searchText;
-    // -------------------------------------------------------
 
-
-    // --- FUNGSI HELPER UNTUK TANGGAL KONSISTEN ---
     const getTimestamp = useCallback((record) => record?.tanggal || record?.tanggalBayar || 0, []);
-    // --- AKHIR FUNGSI HELPER ---
 
-
-    // ---- Handlers Filter (Sama, tapi HAPUS setIsFiltering) ----
     const handleFilterChange = useCallback((key, value) => {
         if (key === 'searchText') {
             setFilters(prev => ({ ...prev, [key]: value }));
-            setPagination(prev => ({ ...prev, current: 1 })); // Reset page
+            setPagination(prev => ({ ...prev, current: 1 }));
             return;
         }
         setTimeout(() => setFilters(prev => ({ ...prev, [key]: value })), 0);
-        setPagination(prev => ({ ...prev, current: 1 })); // Reset page
+        setPagination(prev => ({ ...prev, current: 1 }));
     }, []);
 
     const handleMultiSelectFilter = useCallback((key, value) => {
@@ -129,7 +97,7 @@ const MutasiPage = () => {
                 return { ...prev, [key]: newSelection };
             });
         }, 0);
-        setPagination(prev => ({ ...prev, current: 1 })); // Reset page
+        setPagination(prev => ({ ...prev, current: 1 }));
     }, []);
 
     const handleTableChange = useCallback((paginationConfig) => {
@@ -144,12 +112,10 @@ const MutasiPage = () => {
                 selectedKategori: [],
                 searchText: '',
             });
-            setPagination(prev => ({ ...prev, current: 1 })); // Reset page
+            setPagination(prev => ({ ...prev, current: 1 }));
         }, 0);
     }, []);
-    // ----------------------------------------------------
 
-    // --- Handler Sisanya (ViewProof, Download, Share, Modal, Edit, Tambah - Sama) ---
     const handleViewProof = useCallback((url) => {
          setIsProofLoading(true);
          setViewingProofUrl(url);
@@ -209,10 +175,10 @@ const MutasiPage = () => {
     }, [message]);
 
     const handleClosePreviewModal = useCallback(() => {
-          setIsPreviewModalVisible(false);
-          if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); }
-          setPdfPreviewUrl('');
-          setPdfFileName('');
+         setIsPreviewModalVisible(false);
+         if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); }
+         setPdfPreviewUrl('');
+         setPdfFileName('');
     }, [pdfPreviewUrl]);
 
     const handleTambah = useCallback(() => {
@@ -224,13 +190,10 @@ const MutasiPage = () => {
          setEditingTransaksi(record);
          setIsModalOpen(true);
     }, []);
-    // -------------------------------------------------------------
 
-    // --- Memo untuk kalkulasi saldo berjalan (Gunakan deferredMutasiList) ---
     const balanceMap = useMemo(() => {
         const listToProcess = deferredMutasiList;
         if (!listToProcess || listToProcess.length === 0) return new Map();
-        // Urutkan berdasarkan timestamp untuk memastikan saldo berjalan benar
         const sortedAllTx = [...listToProcess].sort((a, b) => getTimestamp(a) - getTimestamp(b));
         const map = new Map();
         let currentBalance = 0;
@@ -241,7 +204,6 @@ const MutasiPage = () => {
         return map;
     }, [deferredMutasiList, getTimestamp]);
 
-    // --- Memo untuk data yang difilter (Gunakan deferred values) ---
     const filteredTransaksi = useMemo(() => {
         let data = deferredMutasiList;
 
@@ -267,7 +229,6 @@ const MutasiPage = () => {
              data = data.filter(tx => String(tx.keterangan || '').toLowerCase().includes(lowerSearch));
         }
 
-        // Mapping saldo setelah ke data yang difilter
         return data.map(tx => ({ ...tx, saldoSetelah: balanceMap.get(tx.id) }));
 
     }, [
@@ -279,20 +240,16 @@ const MutasiPage = () => {
          balanceMap,
          getTimestamp
     ]);
-    // ------------------------------------------------------------
 
-    // --- Memo untuk rekapitulasi (Gunakan filteredTransaksi) ---
     const rekapDataForCard = useMemo(() => {
         const dataToProses = filteredTransaksi;
 
         if (!dataToProses || dataToProses.length === 0) {
-             // Pastikan nilai awal 0
             return { pemasukanEntries: [], pengeluaranEntries: [], totalPemasukan: 0, totalPengeluaran: 0, saldoAkhirFilter: 0 };
         }
         let totalPemasukan = 0; let totalPengeluaran = 0;
         const pemasukanMap = new Map(); const pengeluaranMap = new Map();
         for (const tx of dataToProses) {
-            // Ambil nama kategori/tipe transaksi
              const kategoriNama = tx.tipe === 'pemasukan' ? KategoriPemasukan[tx.kategori] || tx.kategori?.replace(/_/g, ' ') || 'Pemasukan Lain' : KategoriPengeluaran[tx.kategori] || tx.kategori?.replace(/_/g, ' ') || 'Pengeluaran Lain';
             if (tx.tipe === 'pemasukan' && tx.jumlah > 0) { totalPemasukan += tx.jumlah; pemasukanMap.set(kategoriNama, (pemasukanMap.get(kategoriNama) || 0) + tx.jumlah); }
              else if (tx.tipe === 'pengeluaran' && tx.jumlah < 0) { const positiveAmount = Math.abs(tx.jumlah); totalPengeluaran += positiveAmount; pengeluaranMap.set(kategoriNama, (pengeluaranMap.get(kategoriNama) || 0) + positiveAmount); }
@@ -300,17 +257,16 @@ const MutasiPage = () => {
         const pemasukanEntries = Array.from(pemasukanMap.entries()).sort((a, b) => b[1] - a[1]);
         const pengeluaranEntries = Array.from(pengeluaranMap.entries()).sort((a, b) => b[1] - a[1]);
         
-        // Ambil saldo akhir dari entri terakhir data terfilter
-        const saldoAkhirFilter = dataToProses.length > 0 ? dataToProses[dataToProses.length - 1].saldoSetelah : 0;
+        // Urutkan dulu filteredTransaksi berdasarkan tanggal descending
+        const sortedFiltered = [...dataToProses].sort((a, b) => getTimestamp(b) - getTimestamp(a));
+        const saldoAkhirFilter = sortedFiltered.length > 0 ? sortedFiltered[0].saldoSetelah : 0;
 
         return { pemasukanEntries, pengeluaranEntries, totalPemasukan, totalPengeluaran, saldoAkhirFilter };
 
-    }, [filteredTransaksi]); // Dependency ke filteredTransaksi
-    // ---------------------------------------------------------
+    }, [filteredTransaksi, getTimestamp]);
 
 
-    // --- Handler Generate PDF (Gunakan filteredTransaksi & filters) ---
-    const handleGeneratePdf = useCallback(() => { /* ... (kode sama) ... */
+    const handleGeneratePdf = useCallback(() => {
          const dataForPdf = filteredTransaksi; if (dataForPdf.length === 0) { message.warning('Tidak ada data untuk diekspor.'); return; }
          try {
              const { blobUrl, fileName } = generateMutasiPdf(
@@ -321,7 +277,6 @@ const MutasiPage = () => {
     }, [filteredTransaksi, filters, balanceMap, message]);
 
 
-    // --- Memo untuk kolom tabel (Sama) ---
     const columns = useMemo(() => {
         const baseColumns = [
              { title: 'Tanggal', dataIndex: 'tanggal', key: 'tanggal', render: (tgl, record) => dayjs(getTimestamp(record)).format('DD MMM YYYY'), sorter: (a, b) => getTimestamp(a) - getTimestamp(b), defaultSortOrder: 'descend', width: 140 },
@@ -333,9 +288,8 @@ const MutasiPage = () => {
         ];
         if (!screens.md) return baseColumns.filter(col => col.key !== 'saldoSetelah');
         return baseColumns;
-    }, [screens, handleEdit, getTimestamp, currencyFormatter, handleViewProof]);
+    }, [screens, handleEdit, getTimestamp, handleViewProof]); // Menghapus currencyFormatter dari dependencies karena sudah di-scope
 
-    // --- Render JSX ---
     return (
         <Content style={{ padding: screens.xs ? '12px' : '24px', backgroundColor: '#f0f2f5' }}>
 
@@ -344,7 +298,6 @@ const MutasiPage = () => {
                 <Col xs={24} lg={14}>
                     <Card style={{ height: '100%' }}>
                         <Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>Filter Transaksi</Title>
-                        {/* Spinner filter aktif jika isFiltering DAN BUKAN loading awal */}
                         <Spin spinning={isFiltering && !initialLoading} tip="Memfilter data...">
                             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                                 <Row gutter={[16, 16]}>
@@ -352,7 +305,6 @@ const MutasiPage = () => {
                                     <Col xs={24} sm={12}><Input.Search placeholder="Cari berdasarkan keterangan..." value={filters.searchText} onChange={(e) => handleFilterChange('searchText', e.target.value)} allowClear style={{ width: '100%' }} /></Col>
                                 </Row>
                                 
-                                {/* Kategori Filter (Responsif) */}
                                 <Row gutter={[16, 16]}>
                                     <Col xs={24}>
                                         <Text strong>Tipe Transaksi:</Text>
@@ -390,7 +342,6 @@ const MutasiPage = () => {
                     <RekapitulasiCard
                         rekapData={rekapDataForCard}
                         isFilterActive={isFilterActive}
-                        // Loading HANYA saat load awal atau sedang filter
                         loading={initialLoading || isFiltering}
                     />
                 </Col>
@@ -398,7 +349,6 @@ const MutasiPage = () => {
 
             {/* Card Tabel */}
             <Card>
-                {/* Perbaikan: Pisahkan Tombol Aksi dari Judul di Mobile */}
                 <Row justify="space-between" align="middle" gutter={[16, 16]}>
                     <Col xs={24} sm={12} style={{ marginBottom: screens.xs ? 8 : 0 }}>
                         <Title level={5} style={{ margin: 0 }}>Daftar Transaksi</Title>
@@ -416,44 +366,44 @@ const MutasiPage = () => {
                 <Table
                     columns={columns}
                     dataSource={filteredTransaksi}
-                    loading={initialLoading} // Loading HANYA saat fetch awal
+                    loading={initialLoading}
                     rowKey="id"
                     size="middle"
                     scroll={{ x: 'max-content' }}
                     pagination={{ ...pagination, showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total} transaksi` }}
                     onChange={handleTableChange}
-                    rowClassName={getRowClassName} // Zebra Stripes
+                    rowClassName={getRowClassName}
                 />
-                 {/* Indikator filter terpisah (dihapus dari bawah tabel, hanya tampil di filter card) */}
-                 {/* <div style={{ textAlign: 'center', padding: '20px' }} /> */}
             </Card>
 
 
-            {/* Modal Form Transaksi */}
-             {isModalOpen && (
-                 <TransaksiForm
-                     open={isModalOpen}
-                     onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
-                     initialData={editingTransaksi}
-                     unpaidJual={unpaidJual}
-                     unpaidCetak={unpaidCetak}
-                     loadingInvoices={loadingInvoices}
-                     onSuccess={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
-                 />
-             )}
+            {/************************************
+             * PERBAIKAN ADA DI SINI      *
+             ************************************/}
+            {isModalOpen && (
+                <TransaksiForm
+                    open={isModalOpen}
+                    onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }}
+                    initialValues={editingTransaksi} 
+                    unpaidJual={unpaidJual}
+                    unpaidCetak={unpaidCetak}
+                    loadingInvoices={loadingInvoices}
+                />
+            )}
+            {/************************************
+             * AKHIR BAGIAN PERBAIKAN      *
+             ************************************/}
 
-            {/* Modal PDF Preview (Sama) */}
+
+            {/* Modal PDF Preview */}
             <PdfPreviewModal visible={isPreviewModalVisible} onClose={handleClosePreviewModal} pdfBlobUrl={pdfPreviewUrl} fileName={pdfFileName} />
 
-            {/* Modal Bukti Transaksi (Sama) */}
+            {/* Modal Bukti Transaksi */}
             <Modal open={isProofModalOpen} title="Bukti Transaksi" onCancel={() => setIsProofModalOpen(false)} footer={[ <Button key="close" onClick={() => setIsProofModalOpen(false)}>Tutup</Button>, navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={() => handleShareProof(viewingProofUrl)}>Share</Button>), <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => handleDownloadProof(viewingProofUrl)}>Download</Button> ]} width={800} bodyStyle={{ padding: '24px', textAlign: 'center', minHeight: '300px' }} destroyOnClose>
                  {isProofLoading && <Spin size="large" />} {viewingProofUrl && ( viewingProofUrl.toLowerCase().includes('.pdf') ? ( <iframe src={viewingProofUrl} style={{ width: '100%', height: '65vh', border: 'none', display: isProofLoading ? 'none' : 'block' }} title="Bukti PDF" onLoad={() => setIsProofLoading(false)} /> ) : ( <img alt="Bukti Transaksi" style={{ width: '100%', height: 'auto', maxHeight: '70vh', objectFit: 'contain', display: isProofLoading ? 'none' : 'block' }} src={viewingProofUrl} onLoad={() => setIsProofLoading(false)} /> ) )}
             </Modal>
         </Content>
     );
 };
-
-// Style Chip Filter (Sama)
-
 
 export default MutasiPage;
