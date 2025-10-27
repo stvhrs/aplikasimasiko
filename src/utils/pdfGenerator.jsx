@@ -7,7 +7,7 @@ const companyInfo = {
     hp : "0882-0069-05391" 
 };
 
-const baseURL = 'https://aplikasimasiko.web.app/transaksijualbuku';
+const baseURL = 'https://gudanggalatama.web.app/transaksijualbuku';
 
 const formatCurrency = (value) =>
     new Intl.NumberFormat('id-ID', {
