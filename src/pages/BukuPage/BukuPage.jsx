@@ -20,7 +20,7 @@ import {
     currencyFormatter, numberFormatter, percentFormatter, generateFilters
 } from '../../utils/formatters';                         // Sesuaikan path
 import { generateBukuPdfBlob } from '../../utils/pdfBuku';       // Sesuaikan path
-
+import dayjs from 'dayjs';
 const { Content } = Layout;
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -139,7 +139,7 @@ const BukuPage = () => {
 
     // --- Handler PDF (Tidak Berubah) ---
     const handleGenerateAndShowPdf = useCallback(async () => {
-        const dataToExport = filteredBuku; if (!dataToExport?.length) { message.warn('Tidak ada data untuk PDF.'); return; } setIsGeneratingPdf(true); message.loading({ content: 'Membuat PDF...', key: 'pdfgen', duration: 0 }); setTimeout(async () => { try { if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); } const pdfBlob = generateBukuPdfBlob(dataToExport); if (!pdfBlob || !(pdfBlob instanceof Blob) || pdfBlob.size === 0) { throw new Error("Gagal membuat PDF."); } const url = URL.createObjectURL(pdfBlob); setPdfFileName(`Daftar_Stok_Buku_${Date.now()}.pdf`); setPdfPreviewUrl(url); setIsPreviewModalVisible(true); message.success({ content: 'PDF siap!', key: 'pdfgen', duration: 2 }); } catch (error) { console.error('PDF error:', error); message.error({ content: `Gagal membuat PDF: ${error.message}`, key: 'pdfgen', duration: 5 }); } finally { setIsGeneratingPdf(false); /* message.destroy('pdfgen'); Dihapus agar success terlihat */ } }, 50);
+        const dataToExport = filteredBuku; if (!dataToExport?.length) { message.warn('Tidak ada data untuk PDF.'); return; } setIsGeneratingPdf(true); message.loading({ content: 'Membuat PDF...', key: 'pdfgen', duration: 0 }); setTimeout(async () => { try { if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); } const pdfBlob = generateBukuPdfBlob(dataToExport); if (!pdfBlob || !(pdfBlob instanceof Blob) || pdfBlob.size === 0) { throw new Error("Gagal membuat PDF."); } const url = URL.createObjectURL(pdfBlob); setPdfFileName(`Daftar_Stok_Buku_${dayjs().format('YYYYMMDD_HHmm')}.pdf`); setPdfPreviewUrl(url); setIsPreviewModalVisible(true); message.success({ content: 'PDF siap!', key: 'pdfgen', duration: 2 }); } catch (error) { console.error('PDF error:', error); message.error({ content: `Gagal membuat PDF: ${error.message}`, key: 'pdfgen', duration: 5 }); } finally { setIsGeneratingPdf(false); /* message.destroy('pdfgen'); Dihapus agar success terlihat */ } }, 50);
     }, [filteredBuku, pdfPreviewUrl]); // Tambahkan dependensi jika generateBukuPdfBlob berubah
     const handleClosePreviewModal = useCallback(() => {
         setIsPreviewModalVisible(false); if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
@@ -175,13 +175,7 @@ const BukuPage = () => {
     const tableScrollX = useMemo(() => columns.reduce((acc, col) => acc + (col.width || 150), 0), [columns]);
 
     // PDF Menu (Tidak Berubah)
-    const pdfActionMenu = (
-        <Menu>
-          <Menu.Item key="previewPdf" icon={<EyeOutlined />} onClick={handleGenerateAndShowPdf} disabled={isGeneratingPdf}>
-            {isGeneratingPdf ? 'Membuat PDF...' : 'Pratinjau PDF'}
-          </Menu.Item>
-        </Menu>
-      );
+ 
 
     // Row Class Name (Tidak Berubah)
     const getRowClassName = useCallback((record, index) => {
@@ -217,9 +211,7 @@ const BukuPage = () => {
                                         
                                         {/* Buttons Group (Di bawah search, dibungkus agar responsif) */}
                                         <Space wrap style={{ width: screens.xs ? '100%' : 'auto', justifyContent: screens.xs ? 'flex-start' : 'flex-end' }}>
-                                            <Dropdown overlay={pdfActionMenu} placement="bottomRight">
-                                                <Button icon={<PrinterOutlined />}>Opsi PDF</Button>
-                                            </Dropdown>
+                                                <Button onClick={handleGenerateAndShowPdf}  icon={<PrinterOutlined />}>Cetak PDF</Button>
                                             <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>
                                                 {screens.xs ? 'Restock' : 'Restock Borongan'} {/* Teks pendek di mobile */}
                                             </Button>

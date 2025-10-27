@@ -21,17 +21,17 @@ const generateCustomerReportPdfBlob = (data, searchText) => {
     }
 
     const doc = new jsPDF();
-    let startY = 30; // Default startY
+    let startY = 36; // Default startY
     const title = 'Laporan Tagihan per Pelanggan';
     doc.setFontSize(18);
     doc.text(title, 14, 22);
     doc.setFontSize(10);
 
     if (searchText) {
-        doc.text(`Filter Aktif: Cari Pelanggan: "${searchText}"`, 14, 30);
-        startY = 36; // Turunkan startY jika ada filter
+        doc.text(`Filter Aktif: Cari Pelanggan: "${searchText}"`, 14, 28);
+     
     } else {
-        doc.text('Filter Aktif: Menampilkan Semua Pelanggan', 14, 30);
+        doc.text('Filter Aktif: Menampilkan Semua Pelanggan', 14, 28);
     }
 
     const totals = data.reduce(

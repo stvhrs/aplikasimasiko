@@ -38,7 +38,7 @@ export const generateBukuPdfBlob = (dataToExport, headerInfo = {}) => {
     
     // --- KOLOM & DATA TABEL (Tidak berubah) ---
     const tableColumn = [ /* ... kolom ... */ 
-        "No.", "Judul Buku", "Penerbit", "Stok", "Hrg. Z1", 
+        "No.", "Judul Buku", "Penerbit", "       Stok", "                    Hrg. Z1", 
         "Diskon", "Mapel", "Kelas", "Tipe Buku", "Spek", "Peruntukan"
     ];
     const tableRows = dataToExport.map((buku, index) => [ /* ... data ... */ 
@@ -67,8 +67,8 @@ export const generateBukuPdfBlob = (dataToExport, headerInfo = {}) => {
             fillColor: [230, 230, 230], 
             textColor: 30, 
             fontStyle: 'bold', 
-            halign: 'left', 
-            fontSize: 6, 
+            halign: 'left', // <-- BARIS INI SUDAH DIHAPUS
+            fontSize: 5, 
             cellPadding: 1 
         },
         bodyStyles: { 
@@ -79,17 +79,17 @@ export const generateBukuPdfBlob = (dataToExport, headerInfo = {}) => {
             fillColor: [245, 245, 245] 
         },
         columnStyles: { 
-            0: { cellWidth: 7, halign: 'center' },   // No.
-            1: { cellWidth: "auto" },               // Judul Buku
-            2: { cellWidth: 12 },                   // Penerbit
+            0: { cellWidth: 7,  halign: 'left' },   // No.
+            1: { cellWidth: "auto", halign: 'left'},                // Judul Buku
+            2: { cellWidth: 12 , halign: 'left'},                     // Penerbit
             3: { cellWidth: 9, halign: 'right' },  // Stok
-            4: { cellWidth: 18, halign: 'right' },  // Hrg. Z1
-            5: { cellWidth: 10, halign: 'left' },  // Diskon
-            6: { cellWidth: 36 },                   // Mapel
-            7: { cellWidth: 9, halign: 'left' }, // Kelas
-            8: { cellWidth: 14 },                   // Tipe Buku
+            4: { cellWidth: 18, halign: 'right'},  // Hrg. Z1
+            5: { cellWidth: 10,   halign: 'center'},   // Diskon
+            6: { cellWidth: "auto" , halign: 'left'},                 // Mapel
+            7: { cellWidth: 9,  halign: 'left' },  // Kelas
+            8: { cellWidth:"auto"  , halign: 'left'},                 // Tipe Buku
             9: { cellWidth: 11, halign: 'left' }, // Spek
-            10: { cellWidth: 14 }                   // Peruntukan
+            10: { cellWidth: 14 , halign: 'left'}                     // Peruntukan
         },
         willDrawCell: function (data) {
             if (data.column.dataKey === 1 ) { 

@@ -107,7 +107,14 @@ export const generateMutasiPdf = (data, filters, balanceMap, KategoriPemasukan, 
             theme: 'striped',
             headStyles: { fillColor: [40, 167, 69] }, // Hijau
             styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: { 1: { halign: 'right' } }
+            columnStyles: { 1: { halign: 'right' } },
+            // <-- PERBAIKAN 1: Menambahkan didParseCell untuk align header "Total"
+            didParseCell: (data) => {
+                if (data.section === 'head' && data.column.index === 1) {
+                    data.cell.styles.halign = 'right';
+                }
+            }
+            // <-- AKHIR PERBAIKAN 1
         });
     }
 
@@ -121,11 +128,19 @@ export const generateMutasiPdf = (data, filters, balanceMap, KategoriPemasukan, 
         autoTable(doc, {
             head: [['Ringkasan Pengeluaran per Kategori', 'Total']],
             body: bodyPengeluaran,
-         startY: doc.lastAutoTable.finalY + 10 + (bodyPemasukan.length > 0 ? 10 : 0), // Mulai setelah tabel sblmnya
+            // Perbaiki startY agar tidak tumpang tindih jika kedua tabel ada
+            startY: doc.lastAutoTable.finalY + (bodyPemasukan.length > 0 ? 5 : 10),
             theme: 'striped',
             headStyles: { fillColor: [220, 53, 69] }, // Merah
             styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: { 1: { halign: 'right' } }
+            columnStyles: { 1: { halign: 'right' } },
+            // <-- PERBAIKAN 2: Menambahkan didParseCell untuk align header "Total"
+            didParseCell: (data) => {
+                if (data.section === 'head' && data.column.index === 1) {
+                    data.cell.styles.halign = 'right';
+                }
+            }
+            // <-- AKHIR PERBAIKAN 2
         });
     }
 
@@ -150,18 +165,30 @@ export const generateMutasiPdf = (data, filters, balanceMap, KategoriPemasukan, 
             3: { halign: 'right' },
             4: { halign: 'right' },
         },
-        didParseCell: (data) => {
-            if (data.column.index === 3 && data.section === 'body') {
-              // --- GANTI INI ---
-// --- MENJADI INI ---
-const tx = data.table.body[data.row.index].raw; // Ambil data mentah
+        
+        // <-- PERBAIKAN 3: Ganti seluruh didParseCell
+        didParseCell: (dataHook) => {
+            // 1. Perbaikan Alignment Header
+            if (dataHook.section === 'head') {
+                if (dataHook.column.index === 3 || dataHook.column.index === 4) {
+                    dataHook.cell.styles.halign = 'right';
+                }
+            }
+
+            // 2. Perbaikan Logika Pewarnaan Body
+            if (dataHook.section === 'body' && dataHook.column.index === 3) {
+                // 'data' adalah array asli yang di-pass ke 'generateMutasiPdf'
+                // Kita ambil 'tx' berdasarkan index baris
+                const tx = data[dataHook.row.index]; 
+
                 if (tx && typeof tx.jumlah === 'number' && tx.jumlah < 0) {
-                     data.cell.styles.textColor = [220, 53, 69]; // Merah
+                    dataHook.cell.styles.textColor = [220, 53, 69]; // Merah
                 } else {
-                     data.cell.styles.textColor = [40, 167, 69]; // Hijau
+                    dataHook.cell.styles.textColor = [40, 167, 69]; // Hijau
                 }
             }
         }
+        // <-- AKHIR PERBAIKAN 3
     });
 
     // --- 5. Return Blob ---
