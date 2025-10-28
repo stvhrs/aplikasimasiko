@@ -397,7 +397,7 @@ const renderAksi = useCallback((_, record) => {
                                 <Col xs={24} sm={12} md={12}><Search placeholder="Cari No. Invoice, Pelanggan..." value={searchText} onChange={handleSearchChange} allowClear style={{ width: '100%' }} /></Col>
                                 <Col xs={24} sm={12} md={12}><RangePicker value={dateRange} onChange={handleDateChange} style={{ width: '100%' }} placeholder={['Tgl Mulai', 'Tgl Selesai']} /></Col>
                             </Row>
-                            <Row justify="end" style={{ marginBottom: 24 }}>
+                            <Row justify="start" style={{ marginBottom: 24 }}>
                                 <Col><Space wrap>
                                     <Tag.CheckableTag style={chipStyle} checked={selectedStatus.includes('Belum Bayar')} onChange={() => handleStatusToggle('Belum Bayar')}>Belum Bayar</Tag.CheckableTag>
                                     <Tag.CheckableTag style={chipStyle} checked={selectedStatus.includes('Sebagian')} onChange={() => handleStatusToggle('Sebagian')}>DP (Sebagian)</Tag.CheckableTag>

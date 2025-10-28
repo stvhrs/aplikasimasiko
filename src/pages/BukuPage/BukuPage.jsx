@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'; // (PERUBAHAN) Tambah useDeferredValue
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
 import {
-    Layout, Card, Table, Tag, Button, Modal, Input, Space, Typography, Row, Col,Tabs,Menu,Dropdown,
-    message, Tooltip, Empty, Grid, DatePicker, Spin, Divider, App
+    Layout, Card, Table, Tag, Button, Modal, Input, Space, Typography, Row, Col, Tabs, Menu, Dropdown,
+    message, Tooltip, Empty, Grid, DatePicker, Spin, Divider, App, Statistic // (UBAH) Hapus Statistic
 } from 'antd';
 import {
     PlusOutlined, EditOutlined, HistoryOutlined, ContainerOutlined, PrinterOutlined,
@@ -10,17 +10,18 @@ import {
 
 import BulkRestockModal from './components/BulkRestockModal'; // Sesuaikan path
 import PdfPreviewModal from './components/PdfPreviewModal';   // Sesuaikan path
-import BukuTableComponent from './components/BukuTable';      // Sesuaikan path
-import BukuForm from './components/BukuForm';                // Sesuaikan path
+import BukuTableComponent from './components/BukuTable';       // Sesuaikan path
+import BukuForm from './components/BukuForm';             // Sesuaikan path
 import StokFormModal from './components/StockFormModal';     // Sesuaikan path
 import StokHistoryTab from './components/StokHistoryTab';     // Sesuaikan path
 import useBukuData from '../../hooks/useBukuData';         // Sesuaikan path
-import useDebounce from '../../hooks/useDebounce';           // Sesuaikan path
+import useDebounce from '../../hooks/useDebounce';         // Sesuaikan path
 import {
     currencyFormatter, numberFormatter, percentFormatter, generateFilters
-} from '../../utils/formatters';                         // Sesuaikan path
-import { generateBukuPdfBlob } from '../../utils/pdfBuku';       // Sesuaikan path
+} from '../../utils/formatters';                 // Sesuaikan path
+import { generateBukuPdfBlob } from '../../utils/pdfBuku';      // Sesuaikan path
 import dayjs from 'dayjs';
+
 const { Content } = Layout;
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -39,12 +40,11 @@ const BukuPage = () => {
     const screens = Grid.useBreakpoint();
     const [columnFilters, setColumnFilters] = useState({});
 
-    // --- Pagination (Tidak Berubah) ---
+    // --- Pagination (PERBAIKAN STABILITAS) ---
     const showTotalPagination = useCallback((total, range) => {
-        // Ambil total jenis dari bukuList asli, bukan filteredBuku
-        const totalJenis = bukuList.length;
-        return `${range[0]}-${range[1]} dari ${total} buku (Total Jenis: ${numberFormatter(totalJenis)})`;
-    }, [bukuList.length]); // Dependensi ke length saja sudah cukup
+        const totalJenis = bukuList?.length || 0;
+        return `${range[0]}-${range[1]} dari ${total} (Total ${numberFormatter(totalJenis)} Jenis)`;
+    }, [bukuList]); 
 
     const [pagination, setPagination] = useState(() => ({
         current: 1,
@@ -64,10 +64,10 @@ const BukuPage = () => {
     const deferredDebouncedSearchText = useDeferredValue(debouncedSearchText);
     const isFiltering = debouncedSearchText !== deferredDebouncedSearchText;
 
-    // --- Filter Buku & Generate Filter Options (Tidak Berubah) ---
-    const filteredBuku = useMemo(() => {
+    // --- Filter Buku (Hanya Search Text) ---
+    const searchedBuku = useMemo(() => {
         let processedData = [...bukuList];
-        processedData.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); // Sort default
+        processedData.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); 
 
         if (!deferredDebouncedSearchText) {
             return processedData;
@@ -82,6 +82,36 @@ const BukuPage = () => {
         );
     }, [bukuList, deferredDebouncedSearchText]);
 
+    // --- Filter Buku (Gabungan Search Text + Filter Kolom) ---
+    const dataForTable = useMemo(() => {
+        let processedData = [...searchedBuku];
+
+        const activeFilterKeys = Object.keys(columnFilters).filter(
+            key => columnFilters[key] && columnFilters[key].length > 0
+        );
+
+        if (activeFilterKeys.length === 0) {
+            return processedData; 
+        }
+
+        for (const key of activeFilterKeys) {
+            const filterValues = columnFilters[key]; 
+            
+            processedData = processedData.filter(item => {
+                if (key === 'kelas') {
+                    const itemValue = String(item[key] || '-');
+                    return filterValues.includes(itemValue);
+                }
+                
+                const itemValue = item[key];
+                return filterValues.includes(itemValue);
+            });
+        }
+        
+        return processedData;
+    }, [searchedBuku, columnFilters]); 
+
+    // --- Filter Options (Tidak Berubah) ---
     const mapelFilters = useMemo(() => generateFilters(bukuList, 'mapel'), [bukuList]);
     const kelasFilters = useMemo(() => generateFilters(bukuList, 'kelas'), [bukuList]);
     const spekFilters = useMemo(() => generateFilters(bukuList, 'spek'), [bukuList]);
@@ -89,47 +119,43 @@ const BukuPage = () => {
     const penerbitFilters = useMemo(() => generateFilters(bukuList, 'penerbit'), [bukuList]);
     const tipeBukuFilters = useMemo(() => generateFilters(bukuList, 'tipe_buku'), [bukuList]);
 
-  // --- (PERUBAHAN) Kalkulasi Summary dipindah ke useMemo ---
-    const summaryData = useMemo(() => {
-        // Kalkulasi dilakukan langsung di sini, berdasarkan filteredBuku
-        if (initialLoading || !filteredBuku || filteredBuku.length === 0) {
-            return { totalStok: 0, totalAsset: 0, totalAssetNet: 0 };
-        }
-        const { totalStok, totalAsset, totalAssetNet } = filteredBuku.reduce((acc, item) => {
-            const stok = Number(item.stok) || 0;
-            const harga = Number(item.hargaJual) || 0;
-            const diskon = Number(item.diskonJual) || 0; // Ini diskon BIASA
-            // const diskonSpesial = Number(item.diskonJualSpesial) || 0; // Tidak dipakai
+    // --- (PERUBAHAN) Kalkulasi Summary (Tambahkan totalJudul) ---
+    const summaryData = useMemo(() => {
+        // (UBAH) Tambahkan totalJudul di return
+        if (initialLoading || !dataForTable || dataForTable.length === 0) {
+            return { totalStok: 0, totalAsset: 0, totalAssetNet: 0, totalJudul: 0 }; // (UBAH)
+        }
+        const { totalStok, totalAsset, totalAssetNet } = dataForTable.reduce((acc, item) => {
+            const stok = Number(item.stok) || 0;
+            const harga = Number(item.hargaJual) || 0;
+            const diskon = Number(item.diskonJual) || 0; 
+            
+            let hargaNet = harga;
+            if (diskon > 0) {
+                hargaNet = hargaNet * (1 - diskon / 100); 
+            }
+            
+            acc.totalStok += stok;
+            acc.totalAsset += stok * harga; 
+            acc.totalAssetNet += stok * hargaNet; 
+            return acc;
+        }, { totalStok: 0, totalAsset: 0, totalAssetNet: 0 });
 
-            // --- PERBAIKAN LOGIKA SESUAI PERMINTAAN ANDA ---
-            let hargaNet = harga;
-            if (diskon > 0) {
-                hargaNet = hargaNet * (1 - diskon / 100); // Hanya kurangi diskon biasa
-            }
-            // Baris diskonSpesial dihapus
-            // if (diskonSpesial > 0) hargaNet = hargaNet * (1 - diskonSpesial / 100); 
-            // --- AKHIR PERBAIKAN ---
-
-            acc.totalStok += stok;
-            acc.totalAsset += stok * harga; // Total aset berdasarkan harga jual biasa
-            acc.totalAssetNet += stok * hargaNet; // Total aset bersih setelah diskon BIASA
-            return acc;
-        }, { totalStok: 0, totalAsset: 0, totalAssetNet: 0 });
-
-        return { totalStok, totalAsset, totalAssetNet };
-    }, [filteredBuku, initialLoading]); // Dependensi hanya pada data yang difilter dan status loading awal
+        // (UBAH) Tambahkan totalJudul: dataForTable.length di return
+        return { totalStok, totalAsset, totalAssetNet, totalJudul: dataForTable.length };
+    }, [dataForTable, initialLoading]); // Dependensi ke dataForTable
 
     // --- Efek Reset Pagination (Tidak Berubah) ---
     useEffect(() => {
         setPagination(prev => ({ ...prev, current: 1 }));
-        setColumnFilters({}); // Reset filter kolom saat search berubah
+        setColumnFilters({}); 
     }, [debouncedSearchText]);
 
-    // --- Handle Table Change (TANPA kalkulasi summary manual) ---
+    // --- Handle Table Change (Tidak Berubah) ---
     const handleTableChange = useCallback((paginationConfig, filters, sorter, extra) => {
         setPagination(paginationConfig);
         setColumnFilters(filters);
-    }, []); // Hapus dependensi calculateSummary
+    }, []); 
 
     // --- Handler Modals (Tidak Berubah) ---
     const handleTambah = useCallback(() => { setEditingBuku(null); setIsModalOpen(true); }, []);
@@ -144,22 +170,42 @@ const BukuPage = () => {
 
     // --- Handler PDF (Tidak Berubah) ---
     const handleGenerateAndShowPdf = useCallback(async () => {
-        const dataToExport = filteredBuku; if (!dataToExport?.length) { message.warn('Tidak ada data untuk PDF.'); return; } setIsGeneratingPdf(true); message.loading({ content: 'Membuat PDF...', key: 'pdfgen', duration: 0 }); setTimeout(async () => { try { if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); } const pdfBlob = generateBukuPdfBlob(dataToExport); if (!pdfBlob || !(pdfBlob instanceof Blob) || pdfBlob.size === 0) { throw new Error("Gagal membuat PDF."); } const url = URL.createObjectURL(pdfBlob); setPdfFileName(`Daftar_Stok_Buku_${dayjs().format('YYYYMMDD_HHmm')}.pdf`); setPdfPreviewUrl(url); setIsPreviewModalVisible(true); message.success({ content: 'PDF siap!', key: 'pdfgen', duration: 2 }); } catch (error) { console.error('PDF error:', error); message.error({ content: `Gagal membuat PDF: ${error.message}`, key: 'pdfgen', duration: 5 }); } finally { setIsGeneratingPdf(false); /* message.destroy('pdfgen'); Dihapus agar success terlihat */ } }, 50);
-    }, [filteredBuku, pdfPreviewUrl]); // Tambahkan dependensi jika generateBukuPdfBlob berubah
+        const dataToExport = dataForTable; 
+        if (!dataToExport?.length) { message.warn('Tidak ada data untuk PDF.'); return; } 
+        setIsGeneratingPdf(true); 
+        message.loading({ content: 'Membuat PDF...', key: 'pdfgen', duration: 0 }); 
+        setTimeout(async () => { 
+            try { 
+                if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); } 
+                const pdfBlob = generateBukuPdfBlob(dataToExport); 
+                if (!pdfBlob || !(pdfBlob instanceof Blob) || pdfBlob.size === 0) { throw new Error("Gagal membuat PDF."); } 
+                const url = URL.createObjectURL(pdfBlob); 
+                setPdfFileName(`Daftar_Stok_Buku_${dayjs().format('YYYYMMDD_HHmm')}.pdf`); 
+                setPdfPreviewUrl(url); 
+                setIsPreviewModalVisible(true); 
+                message.success({ content: 'PDF siap!', key: 'pdfgen', duration: 2 }); 
+            } catch (error) { 
+                console.error('PDF error:', error); 
+                message.error({ content: `Gagal membuat PDF: ${error.message}`, key: 'pdfgen', duration: 5 }); 
+            } finally { 
+                setIsGeneratingPdf(false); 
+            } 
+        }, 50);
+    }, [dataForTable, pdfPreviewUrl]); 
+
     const handleClosePreviewModal = useCallback(() => {
         setIsPreviewModalVisible(false); if (pdfPreviewUrl) { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }
     }, [pdfPreviewUrl]);
 
     // --- Kolom Tabel (Tidak Berubah) ---
-    const renderAksi = useCallback((_, record) => ( /* ... (kode sama) ... */
+    const renderAksi = useCallback((_, record) => ( 
         <Space size="small">
           <Tooltip title="Edit Detail Buku"> <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)} /> </Tooltip>
           <Tooltip title="Tambah/Kurangi Stok"> <Button type="link" icon={<HistoryOutlined />} onClick={() => handleTambahStok(record)} /> </Tooltip>
         </Space>
     ), [handleEdit, handleTambahStok]);
 
-    const columns = useMemo(() => [ /* ... (definisi kolom sama) ... */
-        // Pastikan 'updatedAt' tidak ada di kolom jika tidak ingin ditampilkan
+    const columns = useMemo(() => [ 
         { title: 'Kode Buku', dataIndex: 'kode_buku', key: 'kode_buku', width: 130, sorter: (a, b) => (a.kode_buku || '').localeCompare(b.kode_buku || '') },
         { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', width: 300, sorter: (a, b) => (a.judul || '').localeCompare(b.judul || '') },
         { title: 'Penerbit', dataIndex: 'penerbit', key: 'penerbit', width: 150, filters: penerbitFilters, filteredValue: columnFilters.penerbit || null, onFilter: (v, r) => r.penerbit === v },
@@ -167,8 +213,8 @@ const BukuPage = () => {
         { title: 'Hrg. Z1', dataIndex: 'hargaJual', key: 'hargaJual', align: 'right', width: 150, render: currencyFormatter, sorter: (a, b) => (a.hargaJual || 0) - (b.hargaJual || 0) },
         { title: 'Diskon', dataIndex: 'diskonJual', key: 'diskonJual', align: 'right', width: 100, render: percentFormatter, sorter: (a, b) => (a.diskonJual || 0) - (b.diskonJual || 0) },
         { title: 'Mapel', dataIndex: 'mapel', key: 'mapel', width: 150, filters: mapelFilters, filteredValue: columnFilters.mapel || null, onFilter: (v, r) => r.mapel === v },
-        { title: 'Kelas', dataIndex: 'kelas', key: 'kelas', width: 80, render: (v) => v || '-', filters: kelasFilters, filteredValue: columnFilters.kelas || null, onFilter: (v, r) => String(r.kelas || '-') === String(v), align: 'center' }, // Perbaikan onFilter kelas
-        { title: 'Tipe Buku', dataIndex: 'tipe_buku', key: 'tipe_buku', width: 150, render: (v) => v || '-', filters: tipeBukuFilters, filteredValue: columnFilters.tipe_buku || null, onFilter: (v, r) => r.tipe_buku === v }, // Lebarkan
+        { title: 'Kelas', dataIndex: 'kelas', key: 'kelas', width: 80, render: (v) => v || '-', filters: kelasFilters, filteredValue: columnFilters.kelas || null, onFilter: (v, r) => String(r.kelas || '-') === String(v), align: 'center' }, 
+        { title: 'Tipe Buku', dataIndex: 'tipe_buku', key: 'tipe_buku', width: 150, render: (v) => v || '-', filters: tipeBukuFilters, filteredValue: columnFilters.tipe_buku || null, onFilter: (v, r) => r.tipe_buku === v }, 
         { title: 'Spek', dataIndex: 'spek', key: 'spek', width: 100, render: (v) => v ? <Tag>{v}</Tag> : '-', filters: spekFilters, filteredValue: columnFilters.spek || null, onFilter: (v, r) => r.spek === v, align: 'center' },
         { title: 'Peruntukan', dataIndex: 'peruntukan', key: 'peruntukan', width: 120, render: (v) => v || '-', filters: peruntukanFilters, filteredValue: columnFilters.peruntukan || null, onFilter: (v, r) => r.peruntukan === v },
         { title: 'Aksi', key: 'aksi', align: 'center', width: 100, render: renderAksi, fixed: screens.md ? 'right' : false },
@@ -178,9 +224,6 @@ const BukuPage = () => {
     ]);
 
     const tableScrollX = useMemo(() => columns.reduce((acc, col) => acc + (col.width || 150), 0), [columns]);
-
-    // PDF Menu (Tidak Berubah)
- 
 
     // Row Class Name (Tidak Berubah)
     const getRowClassName = useCallback((record, index) => {
@@ -194,17 +237,18 @@ const BukuPage = () => {
                 <TabPane tab={<Space><ReadOutlined /> Manajemen Buku</Space>} key="1">
                     {/* Spin hanya saat filter search debounce */}
                     <Spin spinning={isFiltering} tip="Memfilter data...">
+                        
+                        {/* --- (HAPUS) KARTU RINGKASAN DIHAPUS DARI SINI --- */}
+
                         <Card>
-                            <Row justify="space-between" align="middle" gutter={[16, 16]} style={{ marginBottom: '24px' }}> {/* Tambah margin bawah */}
+                            <Row justify="space-between" align="middle" gutter={[16, 16]} style={{ marginBottom: '24px' }}> 
                                 <Col lg={6} md={8} sm={24} xs={24}>
                                     <Title level={5} style={{ margin: 0 }}>Manajemen Data Buku</Title>
                                 </Col>
                                 <Col lg={18} md={16} sm={24} xs={24}>
-                                    {/* --- Perbaikan Responsif Mobile --- */}
                                     <Space direction={screens.xs ? 'vertical' : 'horizontal'} 
                                         style={{ width: '100%', alignItems: screens.xs ? 'start' : 'end', justifyContent: screens.xs ? 'start' : 'end' }}>
                                         
-                                        {/* Search Input (Ambil full width di mobile) */}
                                         <Input.Search
                                             placeholder="Cari Judul, Kode, Penerbit..."
                                             value={searchText}
@@ -214,14 +258,13 @@ const BukuPage = () => {
                                             enterButton
                                         />
                                         
-                                        {/* Buttons Group (Di bawah search, dibungkus agar responsif) */}
                                         <Space wrap style={{ width: screens.xs ? '100%' : 'auto', justifyContent: screens.xs ? 'flex-start' : 'flex-end' }}>
                                                 <Button onClick={handleGenerateAndShowPdf}  icon={<PrinterOutlined />}>Cetak PDF</Button>
                                             <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>
-                                                {screens.xs ? 'Restock' : 'Restock Borongan'} {/* Teks pendek di mobile */}
+                                                {screens.xs ? 'Restock' : 'Restock Borongan'} 
                                             </Button>
                                             <Button type="primary" icon={<PlusOutlined />} onClick={handleTambah} disabled={initialLoading}>
-                                                Tambah Buku {/* Teks selalu ditampilkan */}
+                                                Tambah Buku 
                                             </Button>
                                         </Space>
                                     </Space>
@@ -230,13 +273,11 @@ const BukuPage = () => {
 
                             <BukuTableComponent
                                 columns={columns}
-                                dataSource={filteredBuku}
-                                // (PERUBAHAN) Loading tabel utama hanya saat initial load atau filter search
+                                dataSource={dataForTable} 
                                 loading={initialLoading || isFiltering}
-                                // (PERUBAHAN) isCalculating sekarang hanya bergantung pada initialLoading
-                                isCalculating={initialLoading} // Hanya true saat data pertama kali load
+                                isCalculating={initialLoading} 
                                 pagination={pagination}
-                                summaryData={summaryData} // Kirim summaryData yang sudah di-memoize
+                                summaryData={summaryData} // (PERUBAHAN) summaryData kini berisi 'totalJudul'
                                 handleTableChange={handleTableChange}
                                 tableScrollX={tableScrollX}
                                 rowClassName={getRowClassName}
@@ -251,7 +292,6 @@ const BukuPage = () => {
             </Tabs>
 
             {/* --- Modal --- */}
-            {/* Pastikan modal dirender kondisional agar state di dalamnya fresh */}
             {isModalOpen && <BukuForm open={isModalOpen} onCancel={handleCloseModal} initialValues={editingBuku} />}
             {isStokModalOpen && <StokFormModal open={isStokModalOpen} onCancel={handleCloseStokModal} buku={stokBuku} />}
             {isPreviewModalVisible && <PdfPreviewModal
@@ -264,7 +304,7 @@ const BukuPage = () => {
                 <BulkRestockModal
                     open={isBulkRestockModalOpen}
                     onClose={handleCloseBulkRestockModal}
-                    bukuList={bukuList} // Kirim bukuList ke modal bulk
+                    bukuList={bukuList} 
                 />
             )}
         </Content>

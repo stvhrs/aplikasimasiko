@@ -32,6 +32,7 @@ import NotaPublicPage from './pages/NotaPublicPage';
 import GBukuPage from './pages/GBukuPage'; // Contoh path
 import GMutasiPage from './pages/GMutasiPage'; // Contoh path
 import GJualPage from './pages/GJualPage'; // Contoh path
+import GenerateBukuChart from './pages/generatedatachartbuku';
 
 
 // Komponen MainLayout (Add Logout Button)
@@ -132,6 +133,8 @@ const MainLayout = () => {
                       <Route path="/gbuku" element={<GBukuPage />} />
                       <Route path="/gmutasi" element={<GMutasiPage />} />
                       <Route path="/gjual" element={<GJualPage />} />
+                      <Route path="/chart" element={<GenerateBukuChart />} />
+
                       {/* Rute Lama Dihapus */}
                       {/* <Route path="/json" element={<JsonUploader />} /> */}
                       {/* <Route path="/mutasi2" element={<DataGeneratorPage />} /> */}

@@ -131,11 +131,7 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
     "SK (Surat Keputusan)",
     "SK HET (Harga Eceran Tertinggi)",
     "Referensi",
-    "Pegangan Guru",
-    "Tematik",
-    "Modul Ajar / Modul Projek",
-    "Eksperimen / Praktikum",
-    "Panduan Evaluasi / Soal"
+   
   ];
 
   return (
