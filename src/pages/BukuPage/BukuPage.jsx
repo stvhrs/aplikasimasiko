@@ -48,8 +48,8 @@ const BukuPage = () => {
 
     const [pagination, setPagination] = useState(() => ({
         current: 1,
-        pageSize: 15,
-        pageSizeOptions: ['15', '50', '100', '200'],
+        pageSize: 25,
+        pageSizeOptions: ['25', '50', '100', '200'],
         showSizeChanger: true,
         showTotal: showTotalPagination,
     }));
@@ -89,30 +89,35 @@ const BukuPage = () => {
     const penerbitFilters = useMemo(() => generateFilters(bukuList, 'penerbit'), [bukuList]);
     const tipeBukuFilters = useMemo(() => generateFilters(bukuList, 'tipe_buku'), [bukuList]);
 
-    // --- (PERUBAHAN) Kalkulasi Summary dipindah ke useMemo ---
-    const summaryData = useMemo(() => {
-        // Kalkulasi dilakukan langsung di sini, berdasarkan filteredBuku
-        if (initialLoading || !filteredBuku || filteredBuku.length === 0) {
-            return { totalStok: 0, totalAsset: 0, totalAssetNet: 0 };
-        }
-        const { totalStok, totalAsset, totalAssetNet } = filteredBuku.reduce((acc, item) => {
-            const stok = Number(item.stok) || 0;
-            const harga = Number(item.hargaJual) || 0;
-            const diskon = Number(item.diskonJual) || 0;
-            const diskonSpesial = Number(item.diskonJualSpesial) || 0;
-            // Hitung harga net dengan benar
-            let hargaNet = harga;
-            if (diskon > 0) hargaNet = hargaNet * (1 - diskon / 100);
-            if (diskonSpesial > 0) hargaNet = hargaNet * (1 - diskonSpesial / 100);
+  // --- (PERUBAHAN) Kalkulasi Summary dipindah ke useMemo ---
+    const summaryData = useMemo(() => {
+        // Kalkulasi dilakukan langsung di sini, berdasarkan filteredBuku
+        if (initialLoading || !filteredBuku || filteredBuku.length === 0) {
+            return { totalStok: 0, totalAsset: 0, totalAssetNet: 0 };
+        }
+        const { totalStok, totalAsset, totalAssetNet } = filteredBuku.reduce((acc, item) => {
+            const stok = Number(item.stok) || 0;
+            const harga = Number(item.hargaJual) || 0;
+            const diskon = Number(item.diskonJual) || 0; // Ini diskon BIASA
+            // const diskonSpesial = Number(item.diskonJualSpesial) || 0; // Tidak dipakai
 
-            acc.totalStok += stok;
-            acc.totalAsset += stok * harga; // Total aset berdasarkan harga jual biasa
-            acc.totalAssetNet += stok * hargaNet; // Total aset bersih setelah diskon
-            return acc;
-        }, { totalStok: 0, totalAsset: 0, totalAssetNet: 0 });
+            // --- PERBAIKAN LOGIKA SESUAI PERMINTAAN ANDA ---
+            let hargaNet = harga;
+            if (diskon > 0) {
+                hargaNet = hargaNet * (1 - diskon / 100); // Hanya kurangi diskon biasa
+            }
+            // Baris diskonSpesial dihapus
+            // if (diskonSpesial > 0) hargaNet = hargaNet * (1 - diskonSpesial / 100); 
+            // --- AKHIR PERBAIKAN ---
 
-        return { totalStok, totalAsset, totalAssetNet };
-    }, [filteredBuku, initialLoading]); // Dependensi hanya pada data yang difilter dan status loading awal
+            acc.totalStok += stok;
+            acc.totalAsset += stok * harga; // Total aset berdasarkan harga jual biasa
+            acc.totalAssetNet += stok * hargaNet; // Total aset bersih setelah diskon BIASA
+            return acc;
+        }, { totalStok: 0, totalAsset: 0, totalAssetNet: 0 });
+
+        return { totalStok, totalAsset, totalAssetNet };
+    }, [filteredBuku, initialLoading]); // Dependensi hanya pada data yang difilter dan status loading awal
 
     // --- Efek Reset Pagination (Tidak Berubah) ---
     useEffect(() => {

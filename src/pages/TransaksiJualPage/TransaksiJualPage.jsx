@@ -63,8 +63,9 @@ export default function TransaksiJualPage() {
     const [dateRange, setDateRange] = useState(null);
     const showTotalPagination = useCallback((total, range) => `${range[0]}-${range[1]} dari ${total} transaksi`, []);
     const [pagination, setPagination] = useState({
-        current: 1, pageSize: 10, // Default PageSize untuk Tab 1
-        showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'],
+        current: 1, pageSize: 25, // Default PageSize untuk Tab 1
+        showSizeChanger: true,         pageSizeOptions: ['25', '50', '100', '200'],
+
         showTotal: showTotalPagination
     });
 

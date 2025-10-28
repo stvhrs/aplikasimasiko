@@ -26,7 +26,8 @@ const TransaksiJualTableComponent = memo(({
                 total: dataSource.length, // Total harus berdasarkan data yang difilter
                 showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total} transaksi`,
                 showSizeChanger: true,
-                pageSizeOptions: ['10', '20', '50', '100'],
+                      pageSizeOptions: ['25', '50', '100', '200'],
+
             }}
             onChange={handleTableChange} // Handler untuk pagination & sort
             locale={{ emptyText: loading ? <Spin /> : <Empty description="Belum ada data transaksi" /> }}

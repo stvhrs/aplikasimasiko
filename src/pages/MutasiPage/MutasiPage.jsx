@@ -47,7 +47,7 @@ const MutasiPage = () => {
         searchText: '',
     });
 
-    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, showSizeChanger: true });
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 25, showSizeChanger: true });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTransaksi, setEditingTransaksi] = useState(null);
     const [isProofModalOpen, setIsProofModalOpen] = useState(false);
