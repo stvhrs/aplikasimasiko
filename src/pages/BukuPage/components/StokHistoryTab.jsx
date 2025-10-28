@@ -136,8 +136,9 @@ const StokHistoryTab = () => {
             sorter: (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
             defaultSortOrder: 'descend',
         },
-        { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', width: 250, fixed: 'left', },
         { title: 'Kode', dataIndex: 'kode_buku', key: 'kode_buku', width: 120 },
+
+        { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', width: 250, fixed: 'left', },
         { 
             title: 'Penerbit', 
             dataIndex: 'penerbit', 
