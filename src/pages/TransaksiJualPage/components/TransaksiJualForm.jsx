@@ -3,6 +3,7 @@
 // - MODIFIKASI: bukuList disortir berdasarkan updatedAt (terbaru dulu)
 // - MODIFIKASI: Dropdown list disederhanakan menjadi "Judul (Penerbit)"
 // - MODIFIKASI: historiStok disimpan ke path root '/historiStok'
+// - MODIFIKASI: Tambah field diskonLain, biayaTentu, dan tampilan Total Diskon
 // ================================
 
 import React, { useEffect, useState } from 'react';
@@ -52,7 +53,7 @@ export default function TransaksiJualForm({
     const [selectedPelanggan, setSelectedPelanggan] = useState(null);
     const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(mode === 'create');
 
-    // ... (useEffect, getHargaOtomatis, handlePelangganChange, handleBukuChange, handleFinish, handleDelete, SubtotalField tetap sama) ...
+    // ... (useEffect, getHargaOtomatis, handlePelangganChange, handleBukuChange, handleDelete, SubtotalField tetap sama) ...
 
     // ===== Prefill saat EDIT =====
     useEffect(() => {
@@ -76,8 +77,10 @@ export default function TransaksiJualForm({
                         nomorInvoice: initialTx.nomorInvoice || initialTx.id,
                         tanggal: initialTx.tanggal && dayjs(initialTx.tanggal).isValid() ? dayjs(initialTx.tanggal) : dayjs(),
                         idPelanggan: initialTx.idPelanggan,
-                        daerah: initialTx.daerah || '', // <-- Load data daerah
+                        daerah: initialTx.daerah || '',
                         keterangan: initialTx.keterangan || '',
+                        diskonLain: initialTx.diskonLain || 0,  // <--- TAMBAHAN
+                        biayaTentu: initialTx.biayaTentu || 0,  // <--- TAMBAHAN
                         items: itemsToSet,
                     });
                     console.log("Data form edit berhasil dimuat.");
@@ -89,7 +92,12 @@ export default function TransaksiJualForm({
             } else if (mode === 'create') {
                 console.log("Inisialisasi form mode create.");
                 form.resetFields();
-                form.setFieldsValue({ tanggal: dayjs(), items: [{}] }); // Set default
+                form.setFieldsValue({
+                    tanggal: dayjs(),
+                    items: [{}],
+                    diskonLain: 0, // <--- TAMBAHAN
+                    biayaTentu: 0  // <--- TAMBAHAN
+                });
                 setSelectedPelanggan(null); // Reset pelanggan terpilih
                 setIsGeneratingInvoice(true); // Pastikan flag generate aktif
                 // Nomor invoice akan digenerate oleh effect lain
@@ -99,12 +107,10 @@ export default function TransaksiJualForm({
 
     // ===== Generate nomor invoice saat CREATE =====
     useEffect(() => {
-        // Hanya jalan di mode create & saat modal terbuka
-        if (mode !== 'create' || !open || !isGeneratingInvoice) return; // Tambah cek isGeneratingInvoice
-        let isMounted = true; // Flag untuk mencegah state update jika komponen unmount
-
+        // ... (Fungsi ini tidak berubah) ...
+        if (mode !== 'create' || !open || !isGeneratingInvoice) return;
+        let isMounted = true;
         const generateInvoiceNumber = async () => {
-            // State sudah di set true di effect sebelumnya
             try {
                 const now = dayjs();
                 const year = now.format('YYYY');
@@ -122,14 +128,14 @@ export default function TransaksiJualForm({
                         return numA - numB;
                     });
                     const lastKey = keys[keys.length - 1];
-                    const lastNumStr = lastKey?.split('-').pop(); // Tambah optional chaining
+                    const lastNumStr = lastKey?.split('-').pop();
                     if (lastNumStr && !isNaN(parseInt(lastNumStr, 10))) {
                         nextNum = parseInt(lastNumStr, 10) + 1;
                     }
                 }
                 const newNumStr = String(nextNum).padStart(4, '0');
                 const displayInvoice = `INV/${year}/${month}/${newNumStr}`;
-                if (isMounted) { // Cek jika masih mounted
+                if (isMounted) {
                     form.setFieldsValue({ nomorInvoice: displayInvoice });
                 }
             } catch (e) {
@@ -143,44 +149,32 @@ export default function TransaksiJualForm({
                 }
             }
         };
-
-        // Tambahkan sedikit delay jika diperlukan, atau panggil langsung
-        // setTimeout(generateInvoiceNumber, 100);
         generateInvoiceNumber();
-
-
-        // Cleanup function
         return () => {
             isMounted = false;
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, open, isGeneratingInvoice]); // Hanya re-run jika mode, open, atau isGeneratingInvoice berubah
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode, open, isGeneratingInvoice]);
 
 
     // ===== Helper harga otomatis (memperhitungkan zona jika ada) =====
     const getHargaOtomatis = (idBuku, pelanggan) => {
+        // ... (Fungsi ini tidak berubah) ...
         const buku = bukuList.find((b) => b.id === idBuku);
         if (!buku) return { hargaSatuan: 0, diskonPersen: 0 };
         const isSpesial = pelanggan?.isSpesial || false;
-
         const zonaPelanggan = pelanggan?.zona;
         const hargaZonaKey = zonaPelanggan ? `harga_zona_${zonaPelanggan}` : null;
-        let hargaJualBuku = Number(buku.hargaJual) || 0; // Default Zona 1
-
+        let hargaJualBuku = Number(buku.hargaJual) || 0;
         if (hargaZonaKey && buku[hargaZonaKey] !== undefined && buku[hargaZonaKey] !== null) {
             hargaJualBuku = Number(buku[hargaZonaKey]) || hargaJualBuku;
         }
-
-        // Tentukan harga final berdasarkan spesial atau tidak
         let finalHargaSatuan = isSpesial
-            ? (Number(buku.hargaJualSpesial) || hargaJualBuku) // Jika spesial, utamakan harga spesial, fallback ke harga zona/jual
-            : hargaJualBuku; // Jika tidak spesial, gunakan harga zona/jual
-
-        // Tentukan diskon final
+            ? (Number(buku.hargaJualSpesial) || hargaJualBuku)
+            : hargaJualBuku;
         let finalDiskonPersen = isSpesial
-            ? (Number(buku.diskonJualSpesial) || 0) // Jika spesial, gunakan diskon spesial
-            : (Number(buku.diskonJual) || 0); // Jika tidak spesial, gunakan diskon jual biasa
-
+            ? (Number(buku.diskonJualSpesial) || 0)
+            : (Number(buku.diskonJual) || 0);
         return {
             hargaSatuan: finalHargaSatuan,
             diskonPersen: finalDiskonPersen,
@@ -190,6 +184,7 @@ export default function TransaksiJualForm({
 
     // ===== Handler ganti pelanggan/buku =====
     const handlePelangganChange = (idPelanggan) => {
+        // ... (Fungsi ini tidak berubah) ...
         const pel = pelangganList.find((p) => p.id === idPelanggan) || null;
         setSelectedPelanggan(pel);
         const items = form.getFieldValue('items') || [];
@@ -202,6 +197,7 @@ export default function TransaksiJualForm({
     };
 
     const handleBukuChange = (index, idBuku) => {
+        // ... (Fungsi ini tidak berubah) ...
         const { hargaSatuan, diskonPersen } = getHargaOtomatis(idBuku, selectedPelanggan);
         const items = form.getFieldValue('items') || [];
         items[index] = { ...(items[index] || {}), idBuku, hargaSatuan, diskonPersen };
@@ -214,8 +210,12 @@ export default function TransaksiJualForm({
         setIsSaving(true);
         message.loading({ content: 'Menyimpan Transaksi...', key: 'tx', duration: 0 });
         try {
-            // 'data' akan berisi: nomorInvoice, tanggal, daerah, keterangan
-            const { idPelanggan, items, ...data } = values; 
+            // <--- MODIFIKASI: Ambil diskonLain dan biayaTentu ---
+            const { idPelanggan, items, diskonLain, biayaTentu, ...data } = values;
+
+            // <--- TAMBAHAN: Parse nilai diskon/biaya ---
+            const nominalDiskonLain = Number(diskonLain || 0);
+            const nominalBiayaTentu = Number(biayaTentu || 0);
 
             if (!data.nomorInvoice || !data.nomorInvoice.startsWith('INV/')) {
                 throw new Error('Nomor Invoice tidak valid atau belum terbuat.');
@@ -233,7 +233,7 @@ export default function TransaksiJualForm({
             const pelanggan = pelangganList.find((p) => p.id === idPelanggan);
             if (!pelanggan) throw new Error('Pelanggan tidak valid.');
 
-            let totalTagihan = 0;
+            let totalTagihan = 0; // Ini akan jadi subtotal item
             let totalQty = 0;
             const processedItems = items.map((item, index) => {
                 if (!item || !item.idBuku || item.jumlah == null || item.hargaSatuan == null) { throw new Error(`Data item #${index + 1} tidak lengkap.`); }
@@ -246,22 +246,27 @@ export default function TransaksiJualForm({
 
                 const hargaFinal = Math.round(hargaSatuan * (1 - diskonPersen / 100) * jumlah);
                 totalQty += jumlah;
-                totalTagihan += hargaFinal;
+                totalTagihan += hargaFinal; // Akumulasi subtotal item
                 // Simpan data buku lengkap untuk histori
-                return { 
-                    idBuku: item.idBuku, 
-                    judulBuku: buku.judul, 
-                    jumlah, 
-                    hargaSatuan, 
+                return {
+                    idBuku: item.idBuku,
+                    judulBuku: buku.judul,
+                    jumlah,
+                    hargaSatuan,
                     diskonPersen,
                     _bukuData: buku // <- Simpan data buku mentah untuk log histori
                 };
             });
 
+            // <--- MODIFIKASI: Hitung Grand Total final ---
+            // totalTagihan saat ini adalah subtotal item
+            const finalTotalTagihan = totalTagihan - nominalDiskonLain + nominalBiayaTentu;
+
+
             if (!data.tanggal || !dayjs(data.tanggal).isValid()) {
                 throw new Error("Tanggal transaksi tidak valid.");
             }
-           
+            
             // Bersihkan _bukuData sebelum simpan ke 'transaksiJualBuku'
             const cleanProcessedItems = processedItems.map(item => {
                 const { _bukuData, ...rest } = item;
@@ -275,11 +280,13 @@ export default function TransaksiJualForm({
                 namaPelanggan: pelanggan.nama,
                 telepon: pelanggan.telepon || '', // Ambil telepon
                 pelangganIsSpesial: pelanggan.isSpesial || false,
-                items: cleanProcessedItems, // <-- Gunakan data yang sudah bersih
-                totalTagihan,
+                items: cleanProcessedItems,
+                totalTagihan: finalTotalTagihan, // <--- MODIFIKASI (Gunakan grand total final)
                 totalQty,
-                daerah: data.daerah || '', // <-- Simpan data daerah
+                daerah: data.daerah || '',
                 keterangan: data.keterangan || '',
+                diskonLain: nominalDiskonLain, // <--- TAMBAHAN
+                biayaTentu: nominalBiayaTentu, // <--- TAMBAHAN
             };
 
             console.log("Mempersiapkan data simpan:", { txKey, baseTx });
@@ -287,26 +294,27 @@ export default function TransaksiJualForm({
             const updates = {};
 
             if (mode === 'create') {
+                // ... (Logika Create tidak berubah, baseTx sudah terupdate) ...
                 updates[`transaksiJualBuku/${txKey}`] = {
                     ...baseTx,
                     jumlahTerbayar: 0,
                     statusPembayaran: 'Belum Bayar',
                     historiPembayaran: null,
-                    createdAt: serverTimestamp(), // <-- Sudah ada
-                    updatedAt: serverTimestamp() // <-- Sudah ada
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
                 };
 
                 // Update Stok (Mode Create - Tanpa validasi negatif)
-                for (const item of processedItems) { // Gunakan processedItems yang masih ada _bukuData
-                    const buku = item._bukuData; // Ambil data buku dari item
-                    const stokSebelum = Number(buku?.stok || 0); 
+                for (const item of processedItems) {
+                    const buku = item._bukuData;
+                    const stokSebelum = Number(buku?.stok || 0);
                     const perubahan = -Math.abs(Number(item.jumlah));
                     const stokSesudah = stokSebelum + perubahan;
-                   
+                    
                     updates[`buku/${item.idBuku}/stok`] = stokSesudah;
                     updates[`buku/${item.idBuku}/updatedAt`] = serverTimestamp();
 
-                    // --- (PENYESUAIAN 1: HISTORI STOK CREATE) ---
+                    // --- (HISTORI STOK CREATE) ---
                     const logKey = push(ref(db, 'historiStok')).key;
                     updates[`historiStok/${logKey}`] = {
                         bukuId: buku.id,
@@ -320,17 +328,17 @@ export default function TransaksiJualForm({
                         refId: txKey,
                         timestamp: serverTimestamp(),
                     };
-                    // --- (AKHIR PENYESUAIAN 1) ---
                 }
             } else { // EDIT MODE
+                // ... (Logika Edit tidak berubah, baseTx sudah terupdate) ...
                 if (!initialTx?.id) throw new Error("ID transaksi edit tidak ditemukan.");
                 const editTxKey = initialTx.id;
                 const originalItems = initialTx.items || [];
 
                 updates[`transaksiJualBuku/${editTxKey}`] = {
-                    ...initialTx, // <-- Bawa data lama (termasuk createdAt)
-                    ...baseTx, // <-- Timpa dengan data baru
-                    updatedAt: serverTimestamp() // <-- Set updatedAt baru
+                    ...initialTx,
+                    ...baseTx, // <-- Timpa dengan data baru (termasuk diskonLain, dll)
+                    updatedAt: serverTimestamp()
                 };
 
                 const stockChanges = new Map();
@@ -340,8 +348,7 @@ export default function TransaksiJualForm({
                     stockChanges.set(item.idBuku, currentDelta + Number(item.jumlah || 0));
                 });
 
-                // Gunakan processedItems yang masih ada _bukuData
-                processedItems.forEach(item => { 
+                processedItems.forEach(item => {
                     const currentDelta = stockChanges.get(item.idBuku) || 0;
                     stockChanges.set(item.idBuku, currentDelta - Number(item.jumlah || 0));
                 });
@@ -350,13 +357,10 @@ export default function TransaksiJualForm({
 
                 for (const [idBuku, deltaQty] of stockChanges.entries()) {
                     if (deltaQty === 0) continue;
-
-                    // Coba cari data buku dari list, baik dari item baru atau lama
                     let buku = processedItems.find(it => it.idBuku === idBuku)?._bukuData;
                     if (!buku) {
                         buku = bukuList.find((b) => b.id === idBuku);
                     }
-
                     if (!buku) {
                         console.warn(`Buku dengan ID ${idBuku} tidak ditemukan saat penyesuaian stok edit.`);
                         continue;
@@ -368,7 +372,7 @@ export default function TransaksiJualForm({
                     updates[`buku/${idBuku}/stok`] = stokSesudah;
                     updates[`buku/${idBuku}/updatedAt`] = serverTimestamp();
 
-                    // --- (PENYESUAIAN 2: HISTORI STOK EDIT) ---
+                    // --- (HISTORI STOK EDIT) ---
                     const logKey = push(ref(db, 'historiStok')).key;
                     updates[`historiStok/${logKey}`] = {
                         bukuId: buku.id,
@@ -382,7 +386,6 @@ export default function TransaksiJualForm({
                         refId: editTxKey,
                         timestamp: serverTimestamp(),
                     };
-                    // --- (AKHIR PENYESUAIAN 2) ---
                 }
             }
 
@@ -404,17 +407,15 @@ export default function TransaksiJualForm({
 
     // ===== Delete (Edit only) =====
     const handleDelete = async () => {
+        // ... (Fungsi ini tidak berubah) ...
         if (mode !== 'edit' || !initialTx?.id) return;
-
         setIsSaving(true);
         message.loading({ content: 'Menghapus transaksi & mengembalikan stok...', key: 'del_tx', duration: 0 });
         try {
             const deleteTxKey = initialTx.id;
-            const itemsToReturn = initialTx.items || []; // <-- Koreksi dari kode sebelumnya
+            const itemsToReturn = initialTx.items || [];
             const updates = {};
-
             updates[`transaksiJualBuku/${deleteTxKey}`] = null;
-
             for (const item of itemsToReturn) {
                 const buku = bukuList.find((b) => b.id === item.idBuku);
                 if (!buku) {
@@ -424,11 +425,10 @@ export default function TransaksiJualForm({
                 const stokSebelum = Number(buku.stok || 0);
                 const perubahan = Math.abs(Number(item.jumlah || 0));
                 const stokSesudah = stokSebelum + perubahan;
-
                 updates[`buku/${item.idBuku}/stok`] = stokSesudah;
                 updates[`buku/${item.idBuku}/updatedAt`] = serverTimestamp();
 
-                // --- (PENYESUAIAN 3: HISTORI STOK DELETE) ---
+                // --- (HISTORI STOK DELETE) ---
                 const logKey = push(ref(db, 'historiStok')).key;
                 updates[`historiStok/${logKey}`] = {
                     bukuId: buku.id,
@@ -442,12 +442,9 @@ export default function TransaksiJualForm({
                     refId: deleteTxKey,
                     timestamp: serverTimestamp(),
                 };
-                // --- (AKHIR PENYESUAIAN 3) ---
             }
-
             console.log("Update Firebase (delete):", updates);
             await update(ref(db), updates);
-
             message.success({ content: 'Transaksi dihapus & stok dikembalikan.', key: 'del_tx' });
             onSuccess?.();
         } catch (e) {
@@ -461,6 +458,7 @@ export default function TransaksiJualForm({
 
     // ===== Subtotal item (read-only) =====
     const SubtotalField = ({ index }) => (
+        // ... (Fungsi ini tidak berubah) ...
         <Form.Item
             noStyle
             shouldUpdate={(prev, cur) =>
@@ -501,7 +499,7 @@ export default function TransaksiJualForm({
                     form={form}
                     layout="vertical"
                     onFinish={handleFinish}
-                    initialValues={{ tanggal: dayjs(), items: [{}] }}
+                    initialValues={{ tanggal: dayjs(), items: [{}], diskonLain: 0, biayaTentu: 0 }} // <--- MODIFIKASI initialValues
                 >
                     {/* --- Header Form Responsive --- */}
                     <Row gutter={16}>
@@ -548,13 +546,8 @@ export default function TransaksiJualForm({
                         {(fields, { add, remove }) => (
                             <>
                                 {fields.map(({ key, name, ...restField }, index) => {
-
-                                    // =================================================================
-                                    // <-- MODIFIKASI 1: Sortir buku berdasarkan updatedAt (terbaru dulu) -->
-                                    // Kita buat salinan array agar tidak mengubah prop asli
+                                    // ... (Logika sorting buku list tidak berubah) ...
                                     const sortedBukuList = [...bukuList].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                                    // =================================================================
-
                                     return (
                                         <Card key={key} size="small" style={{ marginBottom: 16, backgroundColor: '#f9f9f9' }} extra={ fields.length > 1 ? (<Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />) : null }>
                                             <Row gutter={16}>
@@ -568,7 +561,7 @@ export default function TransaksiJualForm({
                                                             filterOption={(input, option) =>
                                                                 (option?.children?.toString() ?? '').toLowerCase().includes(input.toLowerCase())
                                                             }
-                                                            optionLabelProp="label" // <--- tampilkan label sederhana setelah dipilih
+                                                            optionLabelProp="label"
                                                             disabled={!selectedPelanggan || loadingDependencies}
                                                             loading={loadingDependencies}
                                                             notFoundContent={loadingDependencies ? <Spin size="small" /> : 'Data buku tidak ditemukan'}
@@ -577,14 +570,13 @@ export default function TransaksiJualForm({
                                                                 <Option
                                                                     key={b.id}
                                                                     value={b.id}
-                                                                    label={`${b.judul} (${b.penerbit || '?'})`} // <--- ini yang tampil setelah dipilih
+                                                                    label={`${b.judul} (${b.penerbit || '?'})`}
                                                                 >
-                                                                    {/* Ini tampilan di dropdown */}
                                                                     <div>
                                                                         <Text strong>{b.judul}</Text>
                                                                         <br />
                                                                         <Text type="secondary" style={{ fontSize: '0.85em' }}>
-                                                                            ({b.penerbit || '?'}) | {b.mapel || '?'} | Kelas {b.kelas || '?'} | {b.tipe_buku || '?'} | Stok: {b.stok ?? 0} 
+                                                                            ({b.penerbit || '?'}) | {b.mapel || '?'} | Kelas {b.kelas || '?'} | {b.tipe_buku || '?'} | Stok: {b.stok ?? 0}
                                                                         </Text>
                                                                     </div>
                                                                 </Option>
@@ -613,23 +605,90 @@ export default function TransaksiJualForm({
                         )}
                     </Form.List>
 
+
+                    {/* <--- TAMBAHAN: Field Diskon Lain dan Biaya Tentu --- */}
+                    <Row gutter={16} style={{ marginTop: 16 }}>
+                        <Col xs={24} md={12}>
+                            <Form.Item name="diskonLain" label="Diskon Tambahan (Nominal)" initialValue={0}>
+                                <InputNumber
+                                    min={0}
+                                    formatter={rupiahFormatter}
+                                    parser={rupiahParser}
+                                    style={{ width: '100%', textAlign: 'right' }}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                            <Form.Item name="biayaTentu" label="Biaya Tambahan (Cth: Ongkir)" initialValue={0}>
+                                <InputNumber
+                                    min={0}
+                                    formatter={rupiahFormatter}
+                                    parser={rupiahParser}
+                                    style={{ width: '100%', textAlign: 'right' }}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                    {/* --- AKHIR TAMBAHAN --- */}
+
+
                     {/* --- GRAND TOTAL --- */}
-                    <Form.Item noStyle shouldUpdate={(prev, cur) => JSON.stringify(prev.items || []) !== JSON.stringify(cur.items || [])}>
+                    <Form.Item
+                        noStyle
+                        // <--- MODIFIKASI: Update juga jika diskonLain atau biayaTentu berubah
+                        shouldUpdate={(prev, cur) =>
+                            JSON.stringify(prev.items || []) !== JSON.stringify(cur.items || []) ||
+                            prev.diskonLain !== cur.diskonLain ||
+                            prev.biayaTentu !== cur.biayaTentu
+                        }
+                    >
                         {({ getFieldValue }) => {
                             const items = getFieldValue('items') || [];
-                            let total = 0; let qty = 0;
+                            // <--- TAMBAHAN: Ambil nilai diskon/biaya
+                            const diskonLain = Number(getFieldValue('diskonLain') || 0);
+                            const biayaTentu = Number(getFieldValue('biayaTentu') || 0);
+
+                            // <--- MODIFIKASI: Hitung total diskon item
+                            let subtotalItems = 0;
+                            let totalItemDiskon = 0;
+                            let qty = 0;
+
                             items.forEach((it) => {
                                 if (it && it.hargaSatuan != null && it.jumlah != null) {
-                                    const harga = Number(it.hargaSatuan); const diskon = Number(it.diskonPersen || 0); const jml = Number(it.jumlah);
-                                    if (!isNaN(harga) && !isNaN(diskon) && !isNaN(jml)) { total += Math.round(harga * jml * (1 - diskon / 100)); qty += jml;}
+                                    const harga = Number(it.hargaSatuan);
+                                    const diskon = Number(it.diskonPersen || 0);
+                                    const jml = Number(it.jumlah);
+                                    if (!isNaN(harga) && !isNaN(diskon) && !isNaN(jml)) {
+                                        const itemSubtotalBruto = harga * jml;
+                                        const itemDiskonNominal = Math.round(itemSubtotalBruto * (diskon / 100));
+                                        
+                                        subtotalItems += (itemSubtotalBruto - itemDiskonNominal);
+                                        totalItemDiskon += itemDiskonNominal;
+                                        qty += jml;
+                                    }
                                 }
                             });
+                            
+                            // <--- MODIFIKASI: Hitung total diskon dan grand total ---
+                            const finalTotalDiskon = totalItemDiskon + diskonLain;
+                            const finalGrandTotal = subtotalItems - diskonLain + biayaTentu;
+
                             return (
                                 <>
                                     <Divider />
+                                    {/* <--- MODIFIKASI: Layout 3 kolom --- */}
                                     <Row gutter={16}>
-                                        <Col xs={24} md={12} style={{ marginBottom: 16 }}><Card bordered={false} style={{ backgroundColor: '#fafafa' }}><Statistic title="Total Qty Buku" value={qty} /></Card></Col>
-                                        <Col xs={24} md={12}><Card bordered={false} style={{ backgroundColor: '#fafafa' }}><Statistic title="Grand Total" value={total} formatter={rupiahFormatter} /></Card></Col>
+                                        <Col xs={24} md={8} style={{ marginBottom: 16 }}>
+                                            <Card bordered={false} style={{ backgroundColor: '#fafafa' }}><Statistic title="Total Qty Buku" value={qty} /></Card>
+                                        </Col>
+                                        <Col xs={24} md={8} style={{ marginBottom: 16 }}>
+                                            {/* <--- TAMBAHAN: Tampilan Total Diskon --- */}
+                                            <Card bordered={false} style={{ backgroundColor: '#fffbe6' }}><Statistic title="Total Diskon" value={finalTotalDiskon} formatter={rupiahFormatter} valueStyle={{ color: '#d46b08' }} /></Card>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            {/* <--- MODIFIKASI: Tampilan Grand Total --- */}
+                                            <Card bordered={false} style={{ backgroundColor: '#f6ffed' }}><Statistic title="Grand Total" value={finalGrandTotal} formatter={rupiahFormatter} valueStyle={{ color: '#389e0d' }} /></Card>
+                                        </Col>
                                     </Row>
                                     <Divider />
                                 </>

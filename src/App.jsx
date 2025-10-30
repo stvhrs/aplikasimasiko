@@ -161,8 +161,8 @@ const AppRoutes = () => {
                 <Route path="/login" element={<LoginPage />} />
 
                 {/* Rute Publik */}
-                <Route path="/transaksijualbuku/invoice/:id" element={<InvoicePublicPage />} />
-                <Route path="/transaksijualbuku/nota/:id" element={<NotaPublicPage />} />
+                <Route path="/invoice/:id" element={<InvoicePublicPage />} />
+                <Route path="/nota/:id" element={<NotaPublicPage />} />
 
                 {/* Rute Internal yang Dilindungi */}
                 <Route

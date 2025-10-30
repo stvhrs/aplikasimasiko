@@ -1,3 +1,10 @@
+// ================================
+// FILE: src/pages/buku/components/BukuForm.jsx
+// - MODIFIKASI: Tambah unggah cover buku ke Firebase Storage
+// - MODIFIKASI: Tampilkan cover saat edit
+// - MODIFIKASI: Cache gambar 1 bulan
+// ================================
+
 import React, { useState, useEffect } from 'react';
 import {
     Modal,
@@ -13,15 +20,29 @@ import {
     Button,
     Space,
     Popconfirm,
-    Checkbox
+    Checkbox,
+    Upload, // <--- TAMBAHAN
+    Image   // <--- TAMBAHAN
 } from 'antd';
+import { PlusOutlined } from '@ant-design/icons'; // <--- TAMBAHAN
 // (FIX) Tambahkan 'update', 'push', 'serverTimestamp', dan 'remove'
-import { ref, update, push, serverTimestamp, remove, set } from 'firebase/database'; 
-// (FIX) Memperbaiki path import dari ../../../ menjadi ../../
-import { db } from '../../../api/firebase';
+import { ref, update, push, serverTimestamp, remove, set } from 'firebase/database';
+// (FIX) Memperbaiki path import dan menambah 'app'
+import { db, app } from '../../../api/firebase'; // <-- Asumsi 'app' diekspor dari sini
+// <--- TAMBAHAN: Impor Firebase Storage --->
+import {
+    getStorage,
+    ref as storageRef,
+    uploadBytes,
+    getDownloadURL,
+    deleteObject
+} from 'firebase/storage';
 
 const { Option } = Select;
 const { Text } = Typography;
+
+// <--- TAMBAHAN: Inisialisasi Firebase Storage --->
+const storage = getStorage(app);
 
 const BukuForm = ({ open, onCancel, initialValues }) => {
     const [form] = Form.useForm();
@@ -32,11 +53,18 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
 
     const isHetValue = Form.useWatch('isHet', form);
 
+    // <--- TAMBAHAN: State untuk file upload --->
+    const [fileToUpload, setFileToUpload] = useState(null);
+    const [existingImageUrl, setExistingImageUrl] = useState(null);
+
     useEffect(() => {
         if (open) {
             if (isEditing) {
                 // Ini sudah benar, akan mengisi form jika initialValues ada
                 form.setFieldsValue(initialValues);
+                // <--- TAMBAHAN: Set gambar & bersihkan file tertunda --->
+                setExistingImageUrl(initialValues.coverBukuUrl || null);
+                setFileToUpload(null);
             } else {
                 // Ini untuk 'Tambah Buku', mereset form
                 form.resetFields();
@@ -52,39 +80,94 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                     harga_zona_5a: 0,
                     harga_zona_5b: 0,
                 });
+                // <--- TAMBAHAN: Bersihkan state gambar --->
+                setExistingImageUrl(null);
+                setFileToUpload(null);
             }
         }
     }, [initialValues, isEditing, form, open]); // Dependensi ini sudah benar
+
+    // <--- TAMBAHAN: Helper untuk unggah gambar --- >
+    /**
+     * Mengunggah file ke Firebase Storage dengan cache 1 bulan.
+     * @param {File} file - File yang akan diunggah.
+     * @param {string} bookId - ID unik buku (untuk path folder).
+     * @returns {Promise<{downloadURL: string, fullPath: string}>}
+     */
+    const handleImageUpload = async (file, bookId) => {
+        if (!file) return null;
+        
+        // Buat path yang unik: bukuCovers/BOOK-ID/namafile.jpg
+        const fileRef = storageRef(storage, `bukuCovers/${bookId}/${file.name}`);
+        
+        // Metadata untuk cache 30 hari (2592000 detik)
+        const metadata = {
+            cacheControl: 'public, max-age=2592000',
+        };
+
+        const uploadResult = await uploadBytes(fileRef, file, metadata);
+        const downloadURL = await getDownloadURL(uploadResult.ref);
+        
+        return { downloadURL, fullPath: uploadResult.ref.fullPath };
+    };
 
     // --- (PERBAIKAN BESAR) ---
     // 'handleSubmit' sekarang menangani 'Edit' dan 'Create'
     const handleSubmit = async (values) => {
         setLoading(true);
+        const imgLoadingKey = 'upload_cover'; // Kunci pesan loading gambar
 
         if (isEditing) {
             // --- LOGIKA UNTUK EDIT/UPDATE ---
             message.loading({ content: 'Memperbarui buku...', key: 'update' });
             try {
-                // Gunakan ID unik buku (push key) dari initialValues
-                const bookRef = ref(db, `buku/${initialValues.id}`);
+                const bookId = initialValues.id;
+                const oldImagePath = initialValues.coverBukuPath || null;
+                let newImageData = {
+                    coverBukuUrl: initialValues.coverBukuUrl || null,
+                    coverBukuPath: oldImagePath,
+                };
+
+                // 1. Cek jika ada file baru untuk diunggah
+                if (fileToUpload) {
+                    message.loading({ content: 'Mengunggah cover buku...', key: imgLoadingKey, duration: 0 });
+                    const uploadResult = await handleImageUpload(fileToUpload, bookId);
+                    newImageData = {
+                        coverBukuUrl: uploadResult.downloadURL,
+                        coverBukuPath: uploadResult.fullPath,
+                    };
+                    message.destroy(imgLoadingKey);
+                }
                 
-                // Siapkan data update, HANYA field dari form
-                // 'stok' tidak diubah di sini
-                // 'createdAt' dipertahankan
+                const bookRef = ref(db, `buku/${bookId}`);
+                
                 const updateData = {
                     ...values, // Ambil semua data terbaru dari form
+                    ...newImageData, // Timpa dengan data gambar baru (jika ada)
                     updatedAt: serverTimestamp(),
                     stok: initialValues.stok, // Jaga stok (tidak diedit di form ini)
                     createdAt: initialValues.createdAt || serverTimestamp(), // Jaga create time
                 };
 
+                // 2. Update database RTDB
                 await update(bookRef, updateData);
+                
+                // 3. Hapus gambar lama (jika ada) SETELAH update DB berhasil
+                if (fileToUpload && oldImagePath) {
+                    try {
+                        await deleteObject(storageRef(storage, oldImagePath));
+                    } catch (deleteError) {
+                        console.warn("Gagal hapus gambar lama (mungkin sudah terhapus):", deleteError);
+                    }
+                }
+
                 message.success({ content: `Buku "${values.judul}" berhasil diperbarui.`, key: 'update' });
-                onCancel(); // Tutup modal setelah sukses
+                handleCloseModal(); // Tutup modal setelah sukses
 
             } catch (error) {
                 console.error("Gagal memperbarui buku:", error);
                 message.error({ content: "Gagal memperbarui buku: " + error.message, key: 'update' });
+                message.destroy(imgLoadingKey);
             }
 
         } else {
@@ -97,23 +180,35 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                 
                 // 2. Buat ID unik (push key) untuk HISTORI STOK
                 const newHistoryKey = push(ref(db, 'historiStok')).key;
+                
+                // 3. Unggah gambar (jika ada)
+                let newImageData = { coverBukuUrl: null, coverBukuPath: null };
+                if (fileToUpload) {
+                    message.loading({ content: 'Mengunggah cover buku...', key: imgLoadingKey, duration: 0 });
+                    const uploadResult = await handleImageUpload(fileToUpload, newBookId);
+                    newImageData = {
+                        coverBukuUrl: uploadResult.downloadURL,
+                        coverBukuPath: uploadResult.fullPath,
+                    };
+                    message.destroy(imgLoadingKey);
+                }
 
                 const initialStok = Number(values.stok) || 0;
                 const now = serverTimestamp();
                 const updates = {};
 
-                // 3. Data Buku Utama (menggunakan newBookId)
+                // 4. Data Buku Utama (menggunakan newBookId)
                 updates[`buku/${newBookId}`] = {
                     ...values,
+                    ...newImageData, // <--- Masukkan data gambar
                     id: newBookId, // Simpan ID unik di dalam data buku
                     stok: initialStok,
                     createdAt: now,
                     updatedAt: now,
-                    // Hapus 'historiStok' (sesuai kode asli Anda)
-                    historiStok: null 
+                    historiStok: null
                 };
 
-                // 4. Data Histori Stok Awal (menggunakan newHistoryKey)
+                // 5. Data Histori Stok Awal (menggunakan newHistoryKey)
                 updates[`historiStok/${newHistoryKey}`] = {
                     bukuId: newBookId, // Referensi ke ID unik buku
                     kode_buku: values.kode_buku || 'N/A', // Simpan kode buku
@@ -126,15 +221,16 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                     timestamp: now,
                 };
 
-                // 5. Lakukan multi-path update
+                // 6. Lakukan multi-path update
                 await update(ref(db), updates);
 
                 message.success({ content: `Buku "${values.judul}" berhasil dibuat.`, key: 'create' });
-                onCancel(); // Tutup modal setelah sukses
+                handleCloseModal(); // Tutup modal setelah sukses
 
             } catch (error) {
                 console.error("Gagal menyimpan buku baru:", error);
                 message.error({ content: "Gagal menyimpan buku: " + error.message, key: 'create' });
+                message.destroy(imgLoadingKey);
             }
         }
         setLoading(false);
@@ -142,19 +238,42 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
     // --- (AKHIR PERBAIKAN) ---
 
     const handleDelete = async () => {
-        // Logika ini sudah benar, asalkan 'remove' diimpor
         if (!initialValues?.id) return;
         setDeleting(true);
+        
+        const imagePathToDelete = initialValues.coverBukuPath || null; // <--- TAMBAHAN
+        
         try {
+            // 1. Hapus data dari RTDB
             await remove(ref(db, `buku/${initialValues.id}`));
+            
+            // 2. Hapus gambar dari Storage (jika ada)
+            if (imagePathToDelete) {
+                try {
+                    await deleteObject(storageRef(storage, imagePathToDelete));
+                } catch (deleteError) {
+                    console.warn("Gagal hapus gambar (mungkin sudah terhapus):", deleteError);
+                }
+            }
+            
             message.success(`Buku "${initialValues.judul}" berhasil dihapus.`);
-            onCancel();
+            handleCloseModal(); // Gunakan handleCloseModal
         } catch (error) {
             console.error("Delete error:", error);
             message.error("Gagal menghapus buku: " + error.message);
         } finally {
             setDeleting(false);
         }
+    };
+    
+    // <--- TAMBAHAN: Fungsi bersih-bersih saat modal ditutup ---
+    const handleCloseModal = () => {
+        form.resetFields();
+        setFileToUpload(null);
+        setExistingImageUrl(null);
+        setLoading(false); // Pastikan loading state reset
+        setDeleting(false); // Pastikan deleting state reset
+        onCancel(); // Panggil prop onCancel asli
     };
 
     const priceInput = (
@@ -180,7 +299,7 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
         <Modal
             title={isEditing ? "Edit Buku" : "Tambah Buku Baru"}
             open={open}
-            onCancel={onCancel}
+            onCancel={handleCloseModal} // <--- MODIFIKASI: Gunakan handler kustom
             width={screens.md ? 1000 : '95vw'}
             destroyOnClose
             footer={null}
@@ -253,6 +372,37 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
                         </Form.Item>
                     </Col>
                 </Row>
+                
+                {/* <--- TAMBAHAN: Bagian Upload Cover Buku --- */}
+                <Text strong style={{ display: 'block', marginBottom: 8, marginTop: 16 }}>Cover Buku (Opsional)</Text>
+                {isEditing && existingImageUrl && (
+                    <Form.Item label="Cover Saat Ini">
+                        <Image width={100} src={existingImageUrl} alt="Cover Buku" />
+                    </Form.Item>
+                )}
+                <Form.Item label={isEditing && existingImageUrl ? "Ganti Cover" : "Upload Cover"}>
+                    <Upload
+                        listType="picture"
+                        maxCount={1}
+                        fileList={fileToUpload ? [fileToUpload] : []} // <-- Kontrol daftar file
+                        beforeUpload={(file) => {
+                            // Cek tipe file (opsional tapi disarankan)
+                            const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
+                            if (!isJpgOrPng) {
+                                message.error('Anda hanya bisa mengunggah file JPG/PNG/WEBP!');
+                                return Upload.LIST_IGNORE;
+                            }
+                            setFileToUpload(file); // <-- Simpan file ke state
+                            return false; // <-- Hentikan upload otomatis
+                        }}
+                        onRemove={() => {
+                            setFileToUpload(null); // <-- Hapus file dari state
+                        }}
+                    >
+                        <Button icon={<PlusOutlined />} disabled={loading || deleting}>Pilih File</Button>
+                    </Upload>
+                </Form.Item>
+                {/* --- Akhir Bagian Upload --- */}
 
                 <Text strong style={{ display: 'block', marginBottom: 8, marginTop: 16 }}>Data Kategori</Text>
                 <Row gutter={16}>
@@ -306,7 +456,7 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
 
                     <Col>
                         <Space>
-                            <Button onClick={onCancel} disabled={loading || deleting}>Batal</Button>
+                            <Button onClick={handleCloseModal} disabled={loading || deleting}>Batal</Button>
                             <Button type="primary" loading={loading} onClick={() => form.submit()} disabled={loading || deleting}>
                                 {isEditing ? 'Perbarui' : 'Simpan'}
                             </Button>
@@ -319,4 +469,3 @@ const BukuForm = ({ open, onCancel, initialValues }) => {
 };
 
 export default BukuForm;
-
