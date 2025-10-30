@@ -194,7 +194,7 @@ const BukuPage = () => {
         { title: 'Stok', dataIndex: 'stok', key: 'stok', align: 'right', width: 100, render: numberFormatter },
         { title: 'Hrg. Z1', dataIndex: 'hargaJual', key: 'hargaJual', align: 'right', width: 150, render: currencyFormatter },
        
-        { title: 'Diskon', dataIndex: 'diskonJual', key: 'diskonJual', align: 'right', width: 100, render: percentFormatter },
+         { title: 'Diskon', dataIndex: 'diskonJual', key: 'diskonJual', align: 'right', width: 100, render: percentFormatter },
         { title: 'Mapel', dataIndex: 'mapel', key: 'mapel', width: 200, filters: mapelFilters, filteredValue: columnFilters.mapel || null, onFilter: (v, r) => r.mapel === v },
         { title: 'Kelas', dataIndex: 'kelas', key: 'kelas', width: 80, align: 'center', filters: kelasFilters, filteredValue: columnFilters.kelas || null },
         { title: 'Tipe Buku', dataIndex: 'tipe_buku', key: 'tipe_buku', width: 150, filters: tipeBukuFilters, filteredValue: columnFilters.tipe_buku || null },

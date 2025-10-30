@@ -130,14 +130,13 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
     return (
         <Modal
             open={open}
-            onCancel={onCancel}
+            onCancel={onCancel} centered={true}
             title={`Detail Transaksi: ${nomorInvoice || ''}`}
             
             // --- PERUBAHAN 1: Modal Fullscreen ---
-            width="100vw"
-            style={{ top: 0, padding: 0, margin: 0, maxWidth: '100vw' }}
+            width="50vw"
+            style={{ top: 0, padding: 0, margin: 0, maxWidth: '50vw' }}
             // Body dibuat scrollable
-            bodyStyle={{ padding: '24px', height: 'calc(100vh - 55px - 53px)', overflowY: 'auto' }}
             
             footer={[
                 // Ganti <button> biasa menjadi <Button> Ant Design

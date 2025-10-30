@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
-// --- UBAH: Impor Select sudah ada, tidak perlu diubah ---
+// (UBAH) Hapus 'Select' jika tidak dipakai, tapi kita biarkan untuk filter kolom
 import { Card, Table, Input, Row, Col, Typography, DatePicker, Statistic, Button, Space, Spin, Select } from 'antd';
 import { timestampFormatter, numberFormatter } from '../../../utils/formatters'; 
-import useBukuData from '../../../hooks/useBukuData'; 
+// --- (UBAH) Hapus hook lama ---
+// import useBukuData from '../../../hooks/useBukuData'; 
+// --- (UBAH) Impor hook singleton baru ---
+import useSyncStokHistory from '../../../hooks/useSyncStokHistory.js';
 import useDebounce from '../../../hooks/useDebounce'; 
 import dayjs from 'dayjs';
 
@@ -13,52 +16,34 @@ dayjs.extend(isSameOrBefore);
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
-// const { Option } = Select; // Tidak dihapus, mungkin berguna di masa depan
 
 const StokHistoryTab = () => {
-    const { data: bukuList, loading: bukuLoading } = useBukuData(); 
+    // --- (UBAH) Gunakan hook singleton baru ---
+    // 'allHistory' sekarang adalah data stream yang sudah jadi (flat array)
+    // 'historyLoading' hanya akan 'true' saat aplikasi pertama kali dimuat
+    const { data: allHistory, loading: historyLoading } = useSyncStokHistory();
     
     const [searchText, setSearchText] = useState('');
     const debouncedSearchText = useDebounce(searchText, 300);
     const [dateRange, setDateRange] = useState(null); 
-    // State ini tetap kita gunakan untuk mengontrol filter
+    // --- State baru untuk filter kolom 'Penerbit' ---
     const [selectedPenerbit, setSelectedPenerbit] = useState(undefined);
 
-    const allHistory = useMemo(() => {
-        const combinedHistory = [];
-        if (!bukuList || bukuList.length === 0) {
-            return combinedHistory;
-        }
+    // --- (UBAH) Hapus 'allHistory' useMemo ---
+    // Logika ini tidak diperlukan lagi karena hook 'useSyncStokHistory'
+    // sudah menyediakan 'allHistory' sebagai array yang datar dan terurut.
 
-        bukuList.forEach(buku => {
-            if (buku.historiStok && typeof buku.historiStok === 'object') {
-                Object.keys(buku.historiStok).forEach(key => {
-                    combinedHistory.push({
-                        id: `${buku.id}-${key}`, 
-                        ...buku.historiStok[key],
-                        judul: buku.historiStok[key].judul || buku.judul, 
-                        kode_buku: buku.historiStok[key].kode_buku || buku.kode_buku,
-                        penerbit: buku.historiStok[key].penerbit || buku.penerbit, 
-                    });
-                });
-            }
-        });
-
-        combinedHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        return combinedHistory; 
-    }, [bukuList]);
-
-    // Daftar penerbit unik (Tidak berubah, masih diperlukan untuk list filter)
+    // --- (BARU) Daftar penerbit unik untuk filter kolom ---
     const penerbitList = useMemo(() => {
         const allPenerbit = allHistory
             .map(item => item.penerbit)
-            .filter(Boolean); 
+            .filter(Boolean); // Hapus nilai null/undefined
         return [...new Set(allPenerbit)].sort();
     }, [allHistory]);
 
 
     const filteredHistory = useMemo(() => {
-        let filteredData = [...allHistory];
+        let filteredData = [...allHistory]; // Mulai dari data stream
 
         // --- 1. Filter Tanggal (Tidak Berubah) ---
         if (dateRange && dateRange[0] && dateRange[1]) {
@@ -73,9 +58,7 @@ const StokHistoryTab = () => {
             });
         }
 
-        // --- 2. Filter Penerbit (Tidak Berubah) ---
-        // Logika ini tetap diperlukan agar filteredHistory
-        // akurat untuk perhitungan dashboardData.
+        // --- (BARU) 2. Filter Penerbit (dari state filter kolom) ---
         if (selectedPenerbit) {
             filteredData = filteredData.filter(item => item.penerbit === selectedPenerbit);
         }
@@ -92,12 +75,11 @@ const StokHistoryTab = () => {
         }
         
         return filteredData;
-    // Dependency 'selectedPenerbit' tetap ada
+    // (UBAH) Tambahkan 'selectedPenerbit' ke dependensi
     }, [allHistory, debouncedSearchText, dateRange, selectedPenerbit]);
 
     // Dashboard Ringkasan (Tidak Berubah)
-    // Ini akan tetap akurat karena 'filteredHistory' masih
-    // memperhitungkan 'selectedPenerbit'
+    // Akan otomatis update berdasarkan 'filteredHistory'
     const dashboardData = useMemo(() => {
         return filteredHistory.reduce((acc, item) => {
             const perubahan = Number(item.perubahan) || 0;
@@ -111,9 +93,8 @@ const StokHistoryTab = () => {
     }, [filteredHistory]);
 
 
-    // --- TAMBAHAN: Handler untuk perubahan Tabel (Filter, Sort, Paging) ---
+    // --- (BARU) Handler untuk filter kolom tabel ---
     const handleTableChange = (pagination, filters, sorter) => {
-        // Cek apakah ada filter 'penerbit' yang diterapkan
         const penerbitFilterValue = filters.penerbit;
 
         if (penerbitFilterValue && penerbitFilterValue.length > 0) {
@@ -124,9 +105,8 @@ const StokHistoryTab = () => {
             setSelectedPenerbit(undefined);
         }
     };
-    // --- AKHIR TAMBAHAN ---
 
-
+    // --- Definisi Kolom (Diupdate dengan filter penerbit) ---
     const historyColumns = [
         {
             title: 'Waktu', dataIndex: 'timestamp', key: 'timestamp',
@@ -134,29 +114,26 @@ const StokHistoryTab = () => {
             width: 150,
             fixed: 'left',
             sorter: (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
-            defaultSortOrder: 'descend',
+            // Hapus defaultSortOrder, data sudah di-sort dari store
         },
-        { title: 'Kode', dataIndex: 'kode_buku', key: 'kode_buku', width: 120 },
-
         { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', width: 250, fixed: 'left', },
+        { title: 'Kode', dataIndex: 'kode_buku', key: 'kode_buku', width: 120 },
         { 
             title: 'Penerbit', 
             dataIndex: 'penerbit', 
             key: 'penerbit', 
             width: 150,
-            // --- UBAH: Tambahkan filter bawaan kolom ---
+            // --- (BARU) Tambahkan filter bawaan kolom ---
             filters: penerbitList.map(penerbit => ({
                 text: penerbit,
                 value: penerbit,
             })),
-            // Kontrol nilainya menggunakan state kita
+            // Kontrol nilainya menggunakan state
             filteredValue: selectedPenerbit ? [selectedPenerbit] : null,
-            // Paksa hanya bisa 1 pilihan (bukan multi-select)
+            // Paksa hanya bisa 1 pilihan
             filterMultiple: false, 
-            // 'onFilter' tidak perlu, karena filtering sudah ditangani
-            // oleh 'filteredHistory' di atas (agar dashboard sinkron)
+            // onFilter tidak perlu, filtering ditangani 'filteredHistory'
             sorter: (a, b) => (a.penerbit || '').localeCompare(b.penerbit || ''),
-            // --- AKHIR UBAHAN ---
         },
         {
             title: 'Perubahan', dataIndex: 'perubahan', key: 'perubahan',
@@ -165,7 +142,6 @@ const StokHistoryTab = () => {
                 const num = Number(val); 
                 const color = num > 0 ? '#52c41a' : (num < 0 ? '#f5222d' : '#8c8c8c');
                 const prefix = num > 0 ? '+' : '';
-                
                 return (
                     <Text strong style={{ color: color }}>
                         {prefix}{numberFormatter(val)} 
@@ -183,18 +159,19 @@ const StokHistoryTab = () => {
         return 'zebra-row'; 
     };
 
-    // resetFilters tidak berubah, masih berfungsi
+    // Handler reset filter (diupdate)
     const resetFilters = useCallback(() => {
         setSearchText('');
         setDateRange(null);
-        setSelectedPenerbit(undefined);
+        setSelectedPenerbit(undefined); // (UBAH) Reset filter penerbit juga
     }, []);
 
-    // isFilterActive tidak berubah, masih berfungsi
+    // (UBAH) Tambahkan 'selectedPenerbit'
     const isFilterActive = debouncedSearchText || dateRange || selectedPenerbit;
 
     return (
-        <Spin spinning={bukuLoading} tip="Memuat data buku...">
+        // --- (UBAH) Ganti 'bukuLoading' menjadi 'historyLoading' ---
+        <Spin spinning={historyLoading} tip="Memuat data riwayat...">
             {/* --- Card Ringkasan (Tidak Berubah) --- */}
             <Card style={{ marginBottom: 16 }}>
                 <Title level={5} style={{ margin: 0, marginBottom: 16 }}>Ringkasan Riwayat (Berdasarkan Filter)</Title>
@@ -241,11 +218,10 @@ const StokHistoryTab = () => {
                                 onChange={setDateRange}
                                 style={{ width: 240 }}
                             />
-                            
-                            {/* --- UBAH: Hapus <Select> Filter Penerbit dari sini --- */}
-                            
+                            {/* Filter <Select> penerbit sudah tidak di sini,
+                                 tapi terintegrasi di dalam kolom tabel */}
                             <Input.Search
-                                placeholder="Cari Judul, Kode, Keterangan..."
+                                placeholder="Cari Judul, Kode, Penerbit..."
                                 value={searchText}
                                 onChange={(e) => setSearchText(e.target.value)}
                                 allowClear
@@ -257,7 +233,8 @@ const StokHistoryTab = () => {
                 <Table
                     columns={historyColumns}
                     dataSource={filteredHistory}
-                    loading={bukuLoading} 
+                    // --- (UBAH) Gunakan 'historyLoading' ---
+                    loading={historyLoading} 
                     rowKey="id"
                     size="small"
                     scroll={{ x: 1350, y: 'calc(100vh - 500px)' }}
@@ -268,8 +245,7 @@ const StokHistoryTab = () => {
                         showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total} riwayat` 
                     }}
                     rowClassName={getRowClassName} 
-                    
-                    // --- TAMBAHAN: Hubungkan handler perubahan tabel ---
+                    // --- (BARU) Hubungkan handler perubahan tabel ---
                     onChange={handleTableChange}
                 />
             </Card>
@@ -278,3 +254,4 @@ const StokHistoryTab = () => {
 };
 
 export default StokHistoryTab;
+

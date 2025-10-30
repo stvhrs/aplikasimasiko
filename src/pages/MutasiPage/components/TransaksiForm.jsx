@@ -459,7 +459,7 @@ const TransaksiForm = ({
                                     const sisaTagihan = tx.totalTagihan - tx.jumlahTerbayar;
                                     return (
                                         <Option key={tx.id} value={tx.id}>
-                                            {`${tx.nomorInvoice} - ${tx.namaPelanggan} (Sisa: ${currencyFormatter(sisaTagihan)})`}
+                                            {`${tx.namaPelanggan} (Sisa: ${currencyFormatter(sisaTagihan)}) - ${tx.keterangan} - ${tx.nomorInvoice}`}
                                         </Option>
                                     );
                                     

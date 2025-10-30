@@ -1,6 +1,6 @@
  
 import React from 'react';
-import { Layout, Button, Typography } from 'antd';
+import { Layout, Button, Typography,  } from 'antd';
 import { MenuOutlined } from '@ant-design/icons';
 
 const { Header } = Layout;

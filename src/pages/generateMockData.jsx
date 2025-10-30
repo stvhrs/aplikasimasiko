@@ -1,126 +1,140 @@
-const PENERBIT_LIST = [
-  "Erlangga",
-  "Gramedia Pustaka Utama",
-  "Tiga Serangkai",
-  "Penerbit Andi",
-  "Mizan Pustaka",
-  "Bumi Aksara",
-  "Yudhistira",
-  "Intan Pariwara",
-  "Quadra",
-  "Penerbit Bintang",
+// --- IMPOR UNTUK GENERATE KEY HISTORI (Client-side) ---
+import { ref, push } from 'firebase/database';
+import { db } from '../api/firebase'; // Pastikan path ini benar
+// ---------------------------------------------
+
+// --- KONSTANTA DATA BARU ---
+const jenjangList = ["SD", "SMP", "SMA"];
+
+const mapelSD = [
+    "Tematik", "Matematika", "Bahasa Indonesia", "Bahasa Inggris", 
+    "PJOK", "Seni Budaya", "Agama Islam", "Agama Kristen", "Bahasa Jawa" // Contoh mapel SD
+];
+const mapelSMP = [
+    "Matematika", "IPA Terpadu", "IPS Terpadu", "Bahasa Indonesia", "Bahasa Inggris",
+    "PPKn", "Informatika", "Seni Budaya", "PJOK", "Prakarya", "Agama Islam", "Agama Kristen" // Contoh mapel SMP
+];
+const mapelSMA = [
+    "Matematika Wajib", "Matematika Minat", "Fisika", "Kimia", "Biologi", 
+    "Geografi", "Sejarah Indonesia", "Sosiologi", "Ekonomi", "Bahasa Indonesia", 
+    "Bahasa Inggris", "Sastra Inggris", "Informatika", "PPKn", "Seni Budaya", "PJOK", 
+    "Prakarya & KWU", "Agama Islam", "Agama Kristen" // Contoh mapel SMA
 ];
 
-const TIPE_BUKU_LIST = [
-  "Buku Teks Utama (BTU)",
-  "Buku Teks Pendamping (BTP)",
-  "LKS (Lembar Kerja Siswa)",
-  "Non Teks",
-  "Buku Guru (BG)",
-  "Umum",
-  "SK (Surat Keputusan)",
-  "SK HET (Harga Eceran Tertinggi)",
-  "Tematik",
+// Daftar tipe buku (sesuai permintaan terakhir)
+const tipeBukuList = [
+    "BTU", "BTP", "Non Teks", "Buku Guru ", "Umum", "LKS", "Jurnal",
 ];
 
-// Daftar Mapel komprehensif (SD, SMP, SMA, SMK, Muatan Lokal)
-const MAPEL_LIST = [
-  // SD
-  "Matematika",
-  "Bahasa Indonesia",
-  "Pendidikan Pancasila",
-  "Agama",
-  "Seni Budaya",
-  "Penjas",
-  "Tematik Terpadu",
-  // SMP
-  "IPA Terpadu",
-  "IPS Terpadu",
-  "Bahasa Inggris",
-  "Informatika",
-  "Prakarya",
-  // SMA (Wajib & Peminatan)
-  "Fisika",
-  "Kimia",
-  "Biologi",
-  "Sejarah Indonesia",
-  "Geografi",
-  "Sosiologi",
-  "Ekonomi",
-  "Sejarah Peminatan",
-  "Matematika Peminatan",
-  "Sastra Indonesia",
-  "Sastra Inggris",
-  // Mapel dari User
-  "Bahasa Jawa", // Muatan Lokal
-  "Seni Rupa", // Seni
-  "Seni Musik", // Seni
-  "IPA (IPAS)", // Kurikulum Merdeka
-  "Dasar Program Keahlian (SMK)", // Koding/Kejuruan
-];
+// Generate 13 nama penerbit secara otomatis
+const penerbitList = Array.from({ length: 13 }, (_, i) => `Penerbit ${String.fromCharCode(65 + i)} Press`); // Penerbit A Press, B Press, dst.
 
-const KELAS_LIST = [
-  "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
-];
-const PERUNTUKAN_LIST = ["Siswa", "Guru", "Umum"];
-const SPEK_KERTAS_LIST = ["HVS", "Bookpaper", "Art Paper", "N/A"];
+// --- AKHIR KONSTANTA DATA ---
 
-// --- Helper Functions ---
 
-function randomChoice(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+// Helper (tidak berubah)
+const getRandomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+// Fungsi utama generateBooks (DIR)
+export const generateBooks = (numBooks) => {
+    const books = [];
+    const baseTimestamp = Date.now(); // Waktu saat ini sebagai basis
+    const tempHistoryRef = ref(db, 'temp_history_key_generator'); // Hanya untuk generate key
 
-// --- Fungsi Generator Utama ---
+    for (let i = 0; i < numBooks; i++) {
+        const kodeBuku = `BK-${String(i + 1).padStart(6, '0')}`;
+        
+        // Pilih Jenjang, Kelas, Mapel secara logis
+        const jenjang = getRandomElement(jenjangList);
+        let kelas;
+        let mapel;
+        if (jenjang === "SD") {
+            kelas = getRandomInt(1, 6);
+            mapel = getRandomElement(mapelSD);
+        } else if (jenjang === "SMP") {
+            kelas = getRandomInt(7, 9);
+            mapel = getRandomElement(mapelSMP);
+        } else { // SMA
+            kelas = getRandomInt(10, 12);
+            mapel = getRandomElement(mapelSMA);
+        }
 
-export function generateBooks(count = 1000) {
-  const books = [];
-  const generatedCodes = new Set(); // Untuk memastikan kode buku unik
+        const tipeBuku = getRandomElement(tipeBukuList);
+        const penerbit = getRandomElement(penerbitList);
+        
+        // Buat Judul lebih deskriptif
+        const judul = `${tipeBuku} ${mapel} Kelas ${kelas} ${jenjang} - ${penerbit}`;
 
-  for (let i = 0; i < count; i++) {
-    const mapel = randomChoice(MAPEL_LIST);
-    const kelas = randomChoice(KELAS_LIST);
-    const tipeBuku = randomChoice(TIPE_BUKU_LIST);
-    const spekKertas = randomChoice(SPEK_KERTAS_LIST);
-    
-    // Generate kode buku unik
-    let kodeBuku;
-    do {
-      kodeBuku = randomInt(10000, 99999).toString();
-    } while (generatedCodes.has(kodeBuku));
-    generatedCodes.add(kodeBuku);
+        // --- Simulasi Histori Stok (Logika sama seperti sebelumnya) ---
+        let currentStok = 0;
+        let lastHistoryTimestamp = baseTimestamp - (365 * 24 * 60 * 60 * 1000) + getRandomInt(0, 30 * 24 * 60 * 60 * 1000); 
+        const historiStokObject = {};
+        const numHistoryEntries = getRandomInt(95, 105); 
 
-    // Judul yang lebih dinamis
-    const judul = `${tipeBuku} ${mapel} - Kelas ${kelas}`;
+        for (let j = 0; j < numHistoryEntries; j++) {
+            const isStokMasuk = Math.random() > 0.4; 
+            const perubahan = isStokMasuk ? getRandomInt(5, 150) : getRandomInt(-100, -1);
+            const stokSebelum = currentStok;
+            const stokSesudah = stokSebelum + perubahan;
+            lastHistoryTimestamp += getRandomInt(1 * 60 * 60 * 1000, 72 * 60 * 60 * 1000); 
+            
+            let keterangan = '';
+            if (j === 0) keterangan = "Stok Awal (Import)";
+            else if (isStokMasuk) keterangan = `Pembelian PO-${getRandomInt(1000, 9999)}`;
+            else {
+                keterangan = `Penjualan INV/${getRandomInt(2024, 2025)}/${String(getRandomInt(1,12)).padStart(2,'0')}/${String(getRandomInt(1,500)).padStart(4,'0')}`;
+                if (Math.random() < 0.05) keterangan = "Koreksi Stok Fisik";
+            }
 
-    const book = {
-      // id: (i + 1).toString(), // Opsional: untuk ID unik
-      judul: judul,
-      kelas: kelas,
-      kode_buku: kodeBuku,
-      mapel: mapel,
-      penerbit: randomChoice(PENERBIT_LIST),
-      peruntukan: randomChoice(PERUNTUKAN_LIST),
-      spek: spekKertas === "N/A" ? "Buku Digital" : "Buku Cetak",
-      spek_kertas: spekKertas,
-      harga_zona_1: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
-      harga_zona_3: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
-      harga_zona_3: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
-      harga_zona_4: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
+            const historyKey = push(tempHistoryRef).key; 
+            historiStokObject[historyKey] = {
+                keterangan, perubahan, stokSebelum, stokSesudah, timestamp: lastHistoryTimestamp 
+            };
+            currentStok = stokSesudah; 
+        }
+        // --- Akhir Simulasi Histori Stok ---
 
-      stok: randomInt(0, 500),
-      harga_zona_5a: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
-      tipe_buku: tipeBuku,
-      harga_zona_5b: tipeBuku === "LKS (Lembar Kerja Siswa)" ? randomInt(15000, 40000) : randomInt(45000, 150000),
-      updatedAt: Date.now() - randomInt(0, 1000 * 60 * 60 * 24 * 365), // Timestamp acak dalam 1 tahun terakhir
-    };
+        // Harga Jual dasar, sedikit variasi berdasarkan jenjang
+        let hargaJual = 0;
+        let basePrice = 50000;
+        if (jenjang === "SMP") basePrice = 60000;
+        else if (jenjang === "SMA") basePrice = 70000;
 
-    books.push(book);
-  }
+        if (tipeBuku === "LKS") hargaJual = getRandomInt(basePrice * 0.3, basePrice * 0.6);
+        else if (tipeBuku === "Non Teks" || tipeBuku === "Umum" || tipeBuku === "Jurnal") hargaJual = getRandomInt(basePrice * 1.2, basePrice * 3);
+        else hargaJual = getRandomInt(basePrice * 0.8, basePrice * 1.5); // BTU, BTP, Buku Guru
+        
+        hargaJual = Math.round(hargaJual / 1000) * 1000; // Bulatkan ke ribuan terdekat
 
-  return books;
-}
+
+        const book = {
+            id: kodeBuku, 
+            kode_buku: kodeBuku,
+            judul: judul, // Judul baru yang deskriptif
+            penerbit: penerbit,
+            tipe_buku: tipeBuku, 
+            jenjang: jenjang, // Tambahkan jenjang
+            kelas: kelas,     // Tambahkan kelas
+            mapel: mapel,     // Tambahkan mapel
+            hargaJual: hargaJual, 
+            harga_zona_2: 0,
+            harga_zona_3: 0,
+            harga_zona_4: 0,
+            harga_zona_5a: 0,
+            harga_zona_5b: 0,
+            stok: currentStok, // Stok akhir dari simulasi
+            // createdAt lebih awal dari histori pertama
+            createdAt: lastHistoryTimestamp - (numHistoryEntries + getRandomInt(10, 50)) * (24 * 60 * 60 * 1000), 
+            updatedAt: lastHistoryTimestamp, // updatedAt = timestamp histori terakhir
+            historiStok: historiStokObject, 
+        };
+        books.push(book);
+    }
+
+    // Sortir hasil akhir berdasarkan updatedAt (terbaru dulu) - OPSIONAL
+    books.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    console.log(`Generated ${books.length} books. First book sample:`, books[0]); // Log sample
+    return books;
+};

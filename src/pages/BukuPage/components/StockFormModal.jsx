@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Row, Col, Grid, message, Spin, Alert, Typography, Table ,Button} from 'antd';
-// (PERUBAHAN) runTransaction sekarang di-apply ke 'bukuRef', bukan 'bukuStokRef'
-import { ref, push, serverTimestamp, runTransaction, query, orderByChild, limitToLast, onValue } from 'firebase/database';
-import { db } from '../../../api/firebase'; // Hapus 'storage' jika tidak dipakai
-import { timestampFormatter, numberFormatter } from '../../../utils/formatters'; 
+import { Modal, Form, Input, InputNumber, Row, Col, Grid, message, Spin, Alert, Typography, Table, Button } from 'antd';
+// (PERUBAHAN) Import 'set' dan 'equalTo'
+import { ref, push, serverTimestamp, runTransaction, query, orderByChild, onValue, set, equalTo } from 'firebase/database';
+import { db } from '../../../api/firebase';
+import { timestampFormatter, numberFormatter } from '../../../utils/formatters';
+
 const { Title, Text } = Typography;
 
 const StokFormModal = ({ open, onCancel, buku }) => {
@@ -19,21 +20,28 @@ const StokFormModal = ({ open, onCancel, buku }) => {
         }
     }, [open, form]);
 
-    // Effect untuk memuat riwayat stok (Tidak berubah)
+    // --- Effect untuk memuat riwayat stok dari ROOT collection ---
     useEffect(() => {
         if (open && buku?.id) {
             setHistoryLoading(true);
+
+            // 1. Query ke root 'historiStok'
+            // 2. Filter berdasarkan 'bukuId' yang sama dengan buku.id (ID asli buku)
             const bookHistoryRef = query(
-                ref(db, `buku/${buku.id}/historiStok`),
-                orderByChild('timestamp'),
-                limitToLast(20)
+                ref(db, 'historiStok'),
+                orderByChild('bukuId'),
+                equalTo(buku.id) // <-- Memfilter berdasarkan ID asli buku
             );
 
             const unsubscribe = onValue(bookHistoryRef, (snapshot) => {
                 const data = snapshot.val();
                 const loadedHistory = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+                
+                // 3. Urutkan di sisi klien (client-side)
                 loadedHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                setHistory(loadedHistory);
+                
+                // 4. Ambil 20 terbaru
+                setHistory(loadedHistory.slice(0, 20));
                 setHistoryLoading(false);
             }, (error) => {
                 console.error("Gagal memuat riwayat buku:", error);
@@ -49,68 +57,61 @@ const StokFormModal = ({ open, onCancel, buku }) => {
 
     if (!buku) return null;
 
-    // --- (PERUBAHAN BESAR) handleStokUpdate dibuat Atomik ---
+    // --- handleStokUpdate dipecah menjadi 2 langkah ---
     const handleStokUpdate = async (values) => {
         const { jumlah, keterangan } = values;
         const jumlahNum = Number(jumlah);
 
-        // Validasi (Tidak berubah)
-        if (isNaN(jumlahNum)) {
-             message.error("Jumlah harus berupa angka.");
-             return;
-        }
-         if (jumlahNum === 0) {
-             message.error("Jumlah perubahan tidak boleh 0.");
-             return;
+        if (isNaN(jumlahNum) || jumlahNum === 0) {
+            message.error("Jumlah perubahan harus angka dan tidak boleh 0.");
+            return;
         }
 
         setLoading(true);
+        let stokSebelum = 0;
+        let stokSesudah = 0;
+
         try {
-            // 1. Tentukan referensi ke node BUKU (bukan hanya stok)
-            const bukuRef = ref(db, `buku/${buku.id}`);
+            // --- LANGKAH 1: Transaksi Atomik pada STOK BUKU ---
+            // Menggunakan ID asli buku (buku.id)
+            const bukuRef = ref(db, `buku/${buku.id}`); 
             
-            // 2. Jalankan Transaksi pada seluruh node buku
             await runTransaction(bukuRef, (currentData) => {
-                // currentData adalah seluruh objek buku saat ini
                 if (!currentData) {
-                    // Buku tidak ada, batalkan transaksi
-                    return; 
+                    return; // Buku tidak ada
                 }
 
-                // 3. Hitung stok (menggunakan data 'live' dari transaksi)
-                const stokSebelum = Number(currentData.stok) || 0;
-                const stokSesudah = stokSebelum + jumlahNum;
+                stokSebelum = Number(currentData.stok) || 0;
+                stokSesudah = stokSebelum + jumlahNum;
 
-                // 4. Siapkan data histori (juga pakai data 'live')
-                const historyData = {
-                    bukuId: buku.id, // atau currentData.id jika ada
-                    judul: currentData.judul, // Gunakan data dari transaksi
-                    kode_buku: currentData.kode_buku, // Gunakan data dari transaksi
-                    perubahan: jumlahNum, // Ini adalah nama field yg benar
-                    jumlah: jumlahNum, // (Redundant, tapi ada di kode Anda)
-                    keterangan: keterangan || (jumlahNum > 0 ? 'Stok Masuk' : 'Stok Keluar'),
-                    stokSebelum: stokSebelum,
-                    stokSesudah: stokSesudah,
-                    timestamp: serverTimestamp(),
-                };
-                
-                // 5. Buat key baru untuk node historiStok
-                const newHistoryKey = push(ref(db, `buku/${buku.id}/historiStok`)).key;
-
-                // 6. Kembalikan data buku yang LENGKAP dan sudah di-update
                 return {
-                    ...currentData, // Data buku lama
-                    stok: stokSesudah, // Stok baru
-                    updatedAt: serverTimestamp(), // (PERMINTAAN) Timestamp baru
-                    historiStok: {
-                        ...currentData.historiStok,
-                        [newHistoryKey]: historyData // Tambahkan histori baru
-                    }
+                    ...currentData,
+                    stok: stokSesudah,
+                    updatedAt: serverTimestamp(),
                 };
             });
 
+            // --- LANGKAH 2: Tulis ke log historiStok (di root) ---
+            // Ini dijalankan HANYA JIKA transaksi di atas berhasil
+            const newHistoryRef = push(ref(db, 'historiStok'));
+            
+            // (PERUBAHAN DISINI)
+            const historyData = {
+                bukuId: buku.id, // <-- DISIMPAN: ID unik buku (misal: -Oabc...)
+                judul: buku.judul || 'N/A',
+                kode_buku: buku.kode_buku || 'N/A', // <-- DISIMPAN: Kode buku (misal: "2256")
+                penerbit: buku.penerbit || 'N/A',
+                perubahan: jumlahNum,
+                stokSebelum: stokSebelum,
+                stokSesudah: stokSesudah,
+                keterangan: keterangan || (jumlahNum > 0 ? 'Stok Masuk' : 'Stok Keluar'),
+                timestamp: serverTimestamp(),
+            };
+
+            await set(newHistoryRef, historyData);
+
             message.success(`Stok ${buku.judul} berhasil diperbarui.`);
-            onCancel(); // Tutup modal setelah sukses
+            onCancel();
 
         } catch (error) {
             console.error("Stok update error:", error);
@@ -121,14 +122,14 @@ const StokFormModal = ({ open, onCancel, buku }) => {
     };
     // --- AKHIR PERUBAHAN ---
 
-    // Kolom untuk tabel riwayat di modal (Tidak berubah)
+    // Kolom tabel
     const modalHistoryColumns = [
         { title: 'Waktu', dataIndex: 'timestamp', key: 'timestamp', width: 140, render: timestampFormatter, },
         {
             title: 'Perubahan',
-            dataIndex: 'perubahan', // Tampilkan data dari field 'perubahan'
+            dataIndex: 'perubahan',
             key: 'perubahan',
-            width: 100,
+            width: 140,
             align: 'right',
             render: (val) => {
                 const num = Number(val);
@@ -152,7 +153,7 @@ const StokFormModal = ({ open, onCancel, buku }) => {
             onCancel={onCancel}
             footer={null}
             destroyOnClose
-            width={800}
+            width={1300}
         >
             <Spin spinning={loading}>
                 <Row gutter={24}>
