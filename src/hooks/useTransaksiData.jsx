@@ -1,108 +1,102 @@
-// src/hooks/useTransaksiData.js
-import { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { db } from '../api/firebase'; // <-- SESUAIKAN PATH KE FIREBASE CONFIG ANDA
+import { useState, useEffect, useCallback } from 'react';
+// PERBAIKAN: Tambahkan 'get' ke dalam import
+import { ref, onValue, get, query, orderByChild, startAt, endAt } from 'firebase/database';
+import { db } from '../api/firebase'; 
+import dayjs from 'dayjs';
 
-// --- Helper ---
+// --- Helper untuk ubah Snapshot ke Array + ID ---
 const snapshotToArray = (snapshot) => {
-    const data = snapshot.val();
-    return data ? Object.keys(data).map((key) => ({ id: key, ...data[key] })) : [];
+    const data = [];
+    if (snapshot.exists()) {
+        snapshot.forEach((childSnapshot) => {
+            data.push({
+                id: childSnapshot.key,
+                ...childSnapshot.val()
+            });
+        });
+    }
+    // Opsional: Sortir dari yang terbaru (descending) karena Firebase sort by ascending
+    return data.reverse();
 };
 
 // =============================================================
-// --- Singleton RTDB Listener untuk 'transaksiJualBuku' ---
+// HOOK 1: Transaksi Jual (Server Side Filtering)
 // =============================================================
-let txJualCache = [];
-let txJualListeners = [];
-let txJualIsInitialized = false;
-let txJualIsLoading = true; // Mulai dengan true
-let txJualGlobalUnsubscribe = null;
+const CACHE = {
+    data: null,      
+    params: null,    
+    timestamp: 0     
+};
 
-function notifyTxJualListeners() {
-    // Beri salinan cache agar state tidak termutasi langsung
-    txJualListeners.forEach((listener) => listener([...txJualCache]));
-}
+export const useTransaksiJualData = (filterParams) => {
+    // Cek apakah parameter filter sama dengan yang ada di cache
+    const isSameParams = JSON.stringify(filterParams) === JSON.stringify(CACHE.params);
+    
+    // Inisialisasi data
+    const [data, setData] = useState(isSameParams && CACHE.data ? CACHE.data : []);
+    const [loading, setLoading] = useState(!isSameParams || !CACHE.data);
 
-function initializeTxJualListener() {
-    if (txJualGlobalUnsubscribe) return; // Hanya inisialisasi sekali
+    const fetchData = useCallback(async (force = false) => {
+        // Gunakan cache jika parameter sama dan tidak dipaksa refresh
+        if (!force && CACHE.data && JSON.stringify(filterParams) === JSON.stringify(CACHE.params)) {
+            setData(CACHE.data);
+            setLoading(false);
+            return;
+        }
 
-    console.log("Initializing TransaksiJual listener..."); // Debug log
-    txJualIsLoading = true; // Set loading saat inisialisasi
+        setLoading(true);
+        try {
+            console.log("Fetching Data from Server with params:", filterParams); 
+            
+            const dbRef = ref(db, 'transaksiJualBuku');
+            let dbQuery;
 
-    const txRef = ref(db, 'transaksiJualBuku');
-    txJualGlobalUnsubscribe = onValue(txRef, (snapshot) => {
-        console.log("TransaksiJual data received."); // Debug log
-        const data = snapshotToArray(snapshot);
-        // Urutkan di sini jika selalu ingin urut default terbaru
-        data.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
-        txJualCache = data;
-        txJualIsInitialized = true;
-        txJualIsLoading = false;
-        notifyTxJualListeners();
-    }, (error) => {
-        console.error("Firebase error (transaksiJual):", error);
-        txJualIsInitialized = true; // Anggap initialized agar tidak loading terus
-        txJualIsLoading = false;
-        // Mungkin notifikasi error ke listener? Atau handle di komponen?
-        notifyTxJualListeners(); // Notifikasi dengan cache kosong/lama
-    });
-}
+            // --- LOGIKA FILTERING FIREBASE ---
+            if (filterParams?.mode === 'range' && filterParams?.startDate && filterParams?.endDate) {
+                // Ambil data berdasarkan range tanggal (Default Awal Tahun - Hari Ini)
+                dbQuery = query(
+                    dbRef, 
+                    orderByChild('tanggal'), 
+                    startAt(filterParams.startDate), 
+                    endAt(filterParams.endDate)
+                );
+            } else {
+                // Ambil SEMUA data (Mode 'all' atau params kosong)
+                dbQuery = query(dbRef, orderByChild('tanggal'));
+            }
 
-// Custom Hook untuk Data Transaksi Jual
-export function useTransaksiJualData() {
-    const [data, setData] = useState(txJualCache);
-    // Loading state hanya true jika belum diinisialisasi DAN sedang proses loading awal
-    const [loading, setLoading] = useState(!txJualIsInitialized && txJualIsLoading);
+            // Eksekusi Query
+            const snapshot = await get(dbQuery);
+            const result = snapshotToArray(snapshot);
+
+            // Update Cache
+            CACHE.data = result;
+            CACHE.params = filterParams;
+            CACHE.timestamp = Date.now();
+
+            setData(result);
+        } catch (error) {
+            console.error("Error fetching transaksi:", error);
+            setData([]); 
+        } finally {
+            setLoading(false);
+        }
+    }, [filterParams]);
 
     useEffect(() => {
-        // Inisialisasi listener jika belum ada
-        if (!txJualGlobalUnsubscribe) {
-            initializeTxJualListener();
-        }
+        fetchData();
+    }, [fetchData]);
 
-        // Fungsi listener untuk update state lokal
-        const listener = (newData) => {
-             setData(newData);
-             // Update loading status berdasarkan status global
-             setLoading(!txJualIsInitialized && txJualIsLoading);
-        };
-
-        txJualListeners.push(listener);
-
-        // Jika data sudah ada saat hook mount, langsung set data & loading
-        if (txJualIsInitialized) {
-             setData([...txJualCache]); // Beri salinan
-             setLoading(false);
-        } else {
-             setLoading(true); // Pastikan loading true jika belum initialized
-        }
-
-
-        // Cleanup: Hapus listener saat komponen unmount
-        return () => {
-            txJualListeners = txJualListeners.filter((cb) => cb !== listener);
-            console.log("TransaksiJual listener removed. Count:", txJualListeners.length); // Debug
-            // Opsional: Unsubscribe global jika tidak ada listener lagi (jika aplikasi kompleks)
-            // if (txJualListeners.length === 0 && txJualGlobalUnsubscribe) {
-            //     console.log("Unsubscribing global TransaksiJual listener.");
-            //     txJualGlobalUnsubscribe();
-            //     txJualGlobalUnsubscribe = null;
-            //     txJualIsInitialized = false; // Reset status
-            //     txJualCache = [];
-            // }
-        };
-    }, []); // Dependency array kosong agar hanya run sekali saat mount
-
-    return { data, loading };
-}
+    return { data, loading, refresh: () => fetchData(true) };
+};
 
 // =============================================================
-// --- Singleton RTDB Listener untuk 'buku' ---
+// HOOK 2: Data Buku (Tetap Sama)
 // =============================================================
 let bukuCache = [];
 let bukuListeners = [];
 let bukuIsInitialized = false;
-let bukuIsLoading = true; // Mulai dengan true
+let bukuIsLoading = true;
 let bukuGlobalUnsubscribe = null;
 
 function notifyBukuListeners() {
@@ -111,68 +105,50 @@ function notifyBukuListeners() {
 
 function initializeBukuListener() {
     if (bukuGlobalUnsubscribe) return;
-
-    console.log("Initializing Buku listener..."); // Debug log
     bukuIsLoading = true;
-
     bukuGlobalUnsubscribe = onValue(ref(db, 'buku'), (snapshot) => {
-         console.log("Buku data received."); // Debug log
-        bukuCache = snapshotToArray(snapshot);
-        // Pertimbangkan sort default jika perlu (misal by updatedAt)
-        // bukuCache.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        bukuCache = snapshotToArray(snapshot).reverse(); // Reverse agar buku baru di atas (opsional)
         bukuIsInitialized = true;
         bukuIsLoading = false;
         notifyBukuListeners();
     }, (error) => {
-        console.error("Firebase error (buku global):", error);
-        bukuIsInitialized = true;
+        console.error("Error fetch buku:", error);
         bukuIsLoading = false;
-        notifyBukuListeners();
     });
 }
 
-// Custom Hook untuk Data Buku
 export function useBukuData() {
     const [bukuList, setBukuList] = useState(bukuCache);
     const [loadingBuku, setLoadingBuku] = useState(!bukuIsInitialized && bukuIsLoading);
 
     useEffect(() => {
-        if (!bukuGlobalUnsubscribe) {
-            initializeBukuListener();
-        }
+        if (!bukuGlobalUnsubscribe) initializeBukuListener();
 
         const listener = (newData) => {
             setBukuList(newData);
-            setLoadingBuku(!bukuIsInitialized && bukuIsLoading);
+            setLoadingBuku(false);
         };
-
         bukuListeners.push(listener);
 
         if (bukuIsInitialized) {
-            setBukuList([...bukuCache]);
             setLoadingBuku(false);
-        } else {
-            setLoadingBuku(true);
         }
 
         return () => {
             bukuListeners = bukuListeners.filter((cb) => cb !== listener);
-            console.log("Buku listener removed. Count:", bukuListeners.length); // Debug
-            // Logika unsubscribe global bisa ditambahkan di sini jika perlu
         };
     }, []);
 
-    // Ganti nama return agar sesuai dengan penggunaan di komponen
     return { data: bukuList, loading: loadingBuku };
 }
 
 // =============================================================
-// --- Singleton RTDB Listener untuk 'pelanggan' ---
+// HOOK 3: Data Pelanggan (Tetap Sama)
 // =============================================================
 let pelangganCache = [];
 let pelangganListeners = [];
 let pelangganIsInitialized = false;
-let pelangganIsLoading = true; // Mulai dengan true
+let pelangganIsLoading = true;
 let pelangganGlobalUnsubscribe = null;
 
 function notifyPelangganListeners() {
@@ -181,59 +157,39 @@ function notifyPelangganListeners() {
 
 function initializePelangganListener() {
     if (pelangganGlobalUnsubscribe) return;
-
-    console.log("Initializing Pelanggan listener..."); // Debug log
     pelangganIsLoading = true;
-
     pelangganGlobalUnsubscribe = onValue(ref(db, 'pelanggan'), (snapshot) => {
-        console.log("Pelanggan data received."); // Debug log
-        pelangganCache = snapshotToArray(snapshot);
-        // Sort default jika perlu (misal by nama)
-        // pelangganCache.sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+        pelangganCache = snapshotToArray(snapshot).reverse();
         pelangganIsInitialized = true;
         pelangganIsLoading = false;
         notifyPelangganListeners();
     }, (error) => {
-        console.error("Firebase error (pelanggan global):", error);
-        pelangganIsInitialized = true;
+        console.error("Error fetch pelanggan:", error);
         pelangganIsLoading = false;
-        notifyPelangganListeners();
     });
 }
 
-// Custom Hook untuk Data Pelanggan
 export function usePelangganData() {
     const [pelangganList, setPelangganList] = useState(pelangganCache);
     const [loadingPelanggan, setLoadingPelanggan] = useState(!pelangganIsInitialized && pelangganIsLoading);
 
     useEffect(() => {
-        if (!pelangganGlobalUnsubscribe) {
-            initializePelangganListener();
-        }
+        if (!pelangganGlobalUnsubscribe) initializePelangganListener();
 
         const listener = (newData) => {
             setPelangganList(newData);
-            setLoadingPelanggan(!pelangganIsInitialized && pelangganIsLoading);
+            setLoadingPelanggan(false);
         };
-
         pelangganListeners.push(listener);
 
         if (pelangganIsInitialized) {
-            setPelangganList([...pelangganCache]);
             setLoadingPelanggan(false);
-        } else {
-            setLoadingPelanggan(true);
         }
 
         return () => {
             pelangganListeners = pelangganListeners.filter((cb) => cb !== listener);
-            console.log("Pelanggan listener removed. Count:", pelangganListeners.length); // Debug
-            // Logika unsubscribe global bisa ditambahkan di sini jika perlu
         };
     }, []);
 
-    // Ganti nama return agar sesuai dengan penggunaan di komponen
     return { data: pelangganList, loading: loadingPelanggan };
 }
-
-// Anda bisa menambahkan hook lain di sini jika perlu

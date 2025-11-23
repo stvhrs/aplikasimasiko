@@ -1,37 +1,44 @@
 // src/pages/transaksi-jual/components/TagihanPelangganTab.jsx
 import React, { useState, useMemo, useCallback, useDeferredValue } from 'react';
-import { Card, Typography, Input, Row, Col, Button, Spin, Modal, Empty, message, App } from 'antd';
+import { Card, Typography, Input, Row, Col, Button, Spin, Modal, Empty, App } from 'antd';
 import { PrinterOutlined, ShareAltOutlined, DownloadOutlined } from '@ant-design/icons';
-import TransaksiJualTableComponent from './TransaksiJualTableComponent'; // Sesuaikan path
-import useDebounce from '../../../hooks/useDebounce'; // Sesuaikan path
-import { currencyFormatter } from '../../../utils/formatters'; // Sesuaikan path
+import TransaksiJualTableComponent from './TransaksiJualTableComponent'; 
+import useDebounce from '../../../hooks/useDebounce'; 
+import { currencyFormatter } from '../../../utils/formatters'; 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Worker, Viewer } from '@react-pdf-viewer/core'; // Untuk PDF Preview
+import { Worker, Viewer } from '@react-pdf-viewer/core'; 
 import '@react-pdf-viewer/core/lib/styles/index.css';
-import dayjs from 'dayjs'; // Tambahkan import dayjs
+import dayjs from 'dayjs'; 
+import 'dayjs/locale/id'; // Pastikan locale ID diload
 
 const { Title } = Typography;
 const { Search } = Input;
 
-// Fungsi helper generate PDF Laporan Pelanggan (dipindahkan ke sini)
-const generateCustomerReportPdfBlob = (data, searchText) => {
+// --- Helper PDF (Diupdate menerima parameter periodText) ---
+const generateCustomerReportPdfBlob = (data, searchText, periodText) => {
     if (!data || data.length === 0) {
         throw new Error('Tidak ada data pelanggan untuk dicetak.');
     }
 
     const doc = new jsPDF();
-    let startY = 36; // Default startY
+    let startY = 36; 
     const title = 'Laporan Tagihan per Pelanggan';
+    
+    // Header
     doc.setFontSize(18);
     doc.text(title, 14, 22);
-    doc.setFontSize(10);
+    
+    // Sub-header (Periode)
+    doc.setFontSize(11);
+    doc.text(`Periode: ${periodText}`, 14, 28);
 
+    doc.setFontSize(10);
     if (searchText) {
-        doc.text(`Filter Aktif: Cari Pelanggan: "${searchText}"`, 14, 28);
-     
+        doc.text(`Filter Pencarian: "${searchText}"`, 14, 34);
+        startY = 42; // Geser ke bawah jika ada filter search
     } else {
-        doc.text('Filter Aktif: Menampilkan Semua Pelanggan', 14, 28);
+        startY = 36;
     }
 
     const totals = data.reduce(
@@ -68,7 +75,7 @@ const generateCustomerReportPdfBlob = (data, searchText) => {
             5: { halign: 'right' },
         },
         foot: [
-            [ '', '', 'TOTAL', // Tambah satu kolom kosong untuk nomor HP
+            [ '', '', 'TOTAL', 
               currencyFormatter(totals.tagihan),
               currencyFormatter(totals.terbayar),
               currencyFormatter(totals.sisa) ]
@@ -76,25 +83,33 @@ const generateCustomerReportPdfBlob = (data, searchText) => {
         footStyles: { fontStyle: 'bold', halign: 'right', fillColor: [230, 230, 230], textColor: 0 }
     });
 
-    return doc.output('blob'); // Kembalikan blob
+    return doc.output('blob'); 
 };
 
 
-export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) {
-    const { message: antdMessage } = App.useApp(); // Gunakan hook App untuk message
+// --- Komponen Utama ---
+// PERUBAHAN: Menambahkan props `dateRange` dan `isAllTime`
+export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi, dateRange, isAllTime }) {
+    const { message: antdMessage } = App.useApp(); 
     const [searchText, setSearchText] = useState('');
     const debouncedSearchText = useDebounce(searchText, 300);
+    
+    // --- Logic untuk teks Periode ---
+    const periodText = useMemo(() => {
+        if (isAllTime) return "Semua Waktu";
+        if (dateRange && dateRange[0] && dateRange[1]) {
+            // Format: 01 Jan 2024 - 31 Des 2024
+            return `${dateRange[0].format('DD MMM YYYY')} - ${dateRange[1].format('DD MMM YYYY')}`;
+        }
+        return "Semua Waktu"; // Fallback
+    }, [isAllTime, dateRange]);
+
     const showTotalPagination = useCallback((total, range) => `${range[0]}-${range[1]} dari ${total} pelanggan`, []);
     const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 50,
-        showSizeChanger: true,
-             pageSizeOptions: ['25', '50', '100', '200'],
-
-        showTotal: showTotalPagination
+        current: 1, pageSize: 50, showSizeChanger: true, pageSizeOptions: ['25', '50', '100', '200'], showTotal: showTotalPagination
     });
 
-    // State untuk PDF Modal (dikelola di komponen ini)
+    // State PDF Modal
     const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
     const [pdfBlob, setPdfBlob] = useState(null);
     const [pdfTitle, setPdfTitle] = useState('');
@@ -127,7 +142,7 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
         })).sort((a, b) => b.sisaTagihan - a.sisaTagihan);
     }, [allTransaksi]);
 
-    // Filter data dasar HANYA berdasarkan search text
+    // Filter Search
     const deferredSearch = useDeferredValue(debouncedSearchText);
     const filteredCustomerSummary = useMemo(() => {
         if (!deferredSearch) {
@@ -141,7 +156,7 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
 
     const isFiltering = debouncedSearchText !== deferredSearch;
 
-    // Kolom Tabel Pelanggan
+    // Columns
     const columns = useMemo(() => [
         { title: 'No.', key: 'index', width: 60, render: (_t, _r, idx) => ((pagination.current - 1) * pagination.pageSize) + idx + 1 },
         { title: 'Nama Pelanggan', dataIndex: 'namaPelanggan', key: 'namaPelanggan', sorter: (a, b) => a.namaPelanggan.localeCompare(b.namaPelanggan) },
@@ -150,11 +165,9 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
             render: (telepon) => {
                 if (!telepon) return '-';
                 let formattedTelepon = telepon.replace(/\D/g, '');
-                if (formattedTelepon.startsWith('0')) {
-                    formattedTelepon = '62' + formattedTelepon.substring(1);
-                } else if (!formattedTelepon.startsWith('62')) {
-                    formattedTelepon = '62' + formattedTelepon;
-                }
+                if (formattedTelepon.startsWith('0')) formattedTelepon = '62' + formattedTelepon.substring(1);
+                else if (!formattedTelepon.startsWith('62')) formattedTelepon = '62' + formattedTelepon;
+                
                 if (formattedTelepon.length >= 11) {
                     return (<a href={`https://wa.me/${formattedTelepon}`} target="_blank" rel="noopener noreferrer">{telepon}</a>);
                 } else { return telepon; }
@@ -163,22 +176,15 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
         { title: 'Total Tagihan', dataIndex: 'totalTagihan', key: 'totalTagihan', align: 'right', width: 180, render: currencyFormatter, sorter: (a, b) => a.totalTagihan - b.totalTagihan },
         { title: 'Total Terbayar', dataIndex: 'totalTerbayar', key: 'totalTerbayar', align: 'right', width: 180, render: (val) => <span style={{ color: '#3f8600' }}>{currencyFormatter(val)}</span>, sorter: (a, b) => a.totalTerbayar - b.totalTerbayar },
         { title: 'Sisa Tagihan', dataIndex: 'sisaTagihan', key: 'sisaTagihan', align: 'right', width: 200, render: (val) => <span style={{ color: val > 0 ? '#cf1322' : '#3f8600', fontWeight: 600 }}>{currencyFormatter(val)}</span>, sorter: (a, b) => a.sisaTagihan - b.sisaTagihan, defaultSortOrder: 'descend' }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    ], [pagination]); // Tambah dependensi pagination untuk No.
+    ], [pagination]); 
 
     const tableScrollX = useMemo(() => columns.reduce((acc, col) => acc + (col.width || 150), 0), [columns]);
 
     // Handlers
-    const handleSearchChange = useCallback((e) => {
-        setSearchText(e.target.value);
-        setPagination(prev => ({ ...prev, current: 1 }));
-    }, []);
+    const handleSearchChange = useCallback((e) => { setSearchText(e.target.value); setPagination(prev => ({ ...prev, current: 1 })); }, []);
+    const handleTableChange = useCallback((paginationConfig) => { setPagination(paginationConfig); }, []);
 
-    const handleTableChange = useCallback((paginationConfig) => {
-        setPagination(paginationConfig);
-    }, []);
-
-    // Handler PDF Modal
+    // Handler Generate PDF
     const handleGeneratePdf = useCallback(async () => {
         if (filteredCustomerSummary.length === 0) {
             antdMessage.warning('Tidak ada data pelanggan untuk dicetak.');
@@ -188,83 +194,54 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
         const title = 'Laporan Tagihan per Pelanggan';
         setPdfTitle(title);
         setIsGeneratingPdf(true);
-        setIsPdfModalOpen(true); // Buka modal dulu
-        setPdfBlob(null); // Kosongkan blob lama
+        setIsPdfModalOpen(true);
+        setPdfBlob(null);
         setPdfFileName(`Laporan_Tagihan_Pelanggan_${dayjs().format('YYYYMMDD')}.pdf`);
 
-        // Generate PDF di background
         setTimeout(async () => {
             try {
-                const blob = generateCustomerReportPdfBlob(filteredCustomerSummary, debouncedSearchText);
+                // Kirim periodText ke fungsi generator
+                const blob = generateCustomerReportPdfBlob(filteredCustomerSummary, debouncedSearchText, periodText);
                 setPdfBlob(blob);
             } catch (err) {
-                console.error("Gagal generate PDF Laporan Pelanggan:", err);
-                antdMessage.error('Gagal membuat PDF Laporan Pelanggan.');
-                setIsPdfModalOpen(false); // Tutup modal jika gagal
+                console.error("Gagal generate PDF:", err);
+                antdMessage.error('Gagal membuat PDF.');
+                setIsPdfModalOpen(false);
             } finally {
                 setIsGeneratingPdf(false);
             }
-        }, 50); // Delay kecil agar modal sempat muncul
+        }, 50);
 
-    }, [filteredCustomerSummary, debouncedSearchText, antdMessage]);
+    }, [filteredCustomerSummary, debouncedSearchText, periodText, antdMessage]); // Tambah periodText ke dependency
 
-    const handleClosePdfModal = useCallback(() => {
-        setIsPdfModalOpen(false);
-        setIsGeneratingPdf(false); // Pastikan reset loading
-        if (pdfBlob) {
-            // Hapus URL blob jika sudah dibuat
-            // URL.revokeObjectURL(URL.createObjectURL(pdfBlob)); // Ini tidak perlu jika pakai URL.createObjectURL di Viewer
-        }
-        setPdfBlob(null);
-        setPdfTitle('');
-    }, [pdfBlob]);
-
-    const handleDownloadPdf = useCallback(async () => {
-        if (!pdfBlob) return; antdMessage.loading({ content: 'Mengunduh...', key: 'pdfdl' }); try { const url = URL.createObjectURL(pdfBlob); const link = document.createElement('a'); link.href = url; const fn = `${pdfFileName.replace(/[\/:]/g, '_') || 'download'}`; link.setAttribute('download', fn); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); antdMessage.success({ content: 'Unduhan dimulai!', key: 'pdfdl', duration: 2 }); } catch (err) { antdMessage.error({ content: `Gagal mengunduh: ${err.message}`, key: 'pdfdl', duration: 3 }); }
-    }, [pdfBlob, pdfFileName, antdMessage]);
-
-    const handleSharePdf = useCallback(async () => {
-        if (!navigator.share) { antdMessage.error('Fitur share tidak didukung di browser ini.'); return; } if (!pdfBlob) return; const fn = `${pdfFileName.replace(/[\/:]/g, '_') || 'file'}`; const file = new File([pdfBlob], fn, { type: 'application/pdf' }); const shareData = { title: pdfTitle, text: `File PDF: ${pdfTitle}`, files: [file] }; if (navigator.canShare && navigator.canShare(shareData)) { try { await navigator.share(shareData); antdMessage.success('Berhasil dibagikan!'); } catch (err) { if (err.name !== 'AbortError') antdMessage.error(`Gagal berbagi: ${err.message}`); } } else { antdMessage.warn('Berbagi file PDF tidak didukung.'); }
-    }, [pdfBlob, pdfTitle, pdfFileName, antdMessage]);
-
+    const handleClosePdfModal = useCallback(() => { setIsPdfModalOpen(false); setIsGeneratingPdf(false); setPdfBlob(null); setPdfTitle(''); }, []);
+    const handleDownloadPdf = useCallback(async () => { if (!pdfBlob) return; antdMessage.loading({ content: 'Mengunduh...', key: 'pdfdl' }); try { const url = URL.createObjectURL(pdfBlob); const link = document.createElement('a'); link.href = url; const fn = `${pdfFileName.replace(/[\/:]/g, '_') || 'download'}`; link.setAttribute('download', fn); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); antdMessage.success({ content: 'Unduhan dimulai!', key: 'pdfdl', duration: 2 }); } catch (err) { antdMessage.error({ content: `Gagal mengunduh: ${err.message}`, key: 'pdfdl', duration: 3 }); } }, [pdfBlob, pdfFileName, antdMessage]);
+    const handleSharePdf = useCallback(async () => { if (!navigator.share) { antdMessage.error('Fitur share tidak didukung.'); return; } if (!pdfBlob) return; const fn = `${pdfFileName.replace(/[\/:]/g, '_') || 'file'}`; const file = new File([pdfBlob], fn, { type: 'application/pdf' }); const shareData = { title: pdfTitle, text: `File PDF: ${pdfTitle}`, files: [file] }; if (navigator.canShare && navigator.canShare(shareData)) { try { await navigator.share(shareData); antdMessage.success('Berhasil dibagikan!'); } catch (err) { if (err.name !== 'AbortError') antdMessage.error(`Gagal berbagi: ${err.message}`); } } else { antdMessage.warn('Tidak didukung.'); } }, [pdfBlob, pdfTitle, pdfFileName, antdMessage]);
 
     return (
         <>
             <Card
-                title={<Title level={5} style={{ margin: 0 }}>Ringkasan Tagihan per Pelanggan (Semua Waktu)</Title>}
-                // Hapus extra, tombol cetak dipindahkan ke bawah
+                // PERUBAHAN: Judul Card Dinamis
+                title={<Title level={5} style={{ margin: 0 }}>Ringkasan Tagihan ({periodText})</Title>}
             >
-                {/* --- Filter & Tombol Cetak (Diubah tata letaknya untuk mobile) --- */}
+                {/* Search & Print Button */}
                 <Row gutter={[16, 16]} style={{ marginBottom: 24, alignItems: 'center' }}>
                     <Col xs={24} md={18}>
-                        <Search
-                            placeholder="Cari nama pelanggan..."
-                            value={searchText}
-                            onChange={handleSearchChange}
-                            allowClear
-                            style={{ width: '100%' }}
-                        />
+                        <Search placeholder="Cari nama pelanggan..." value={searchText} onChange={handleSearchChange} allowClear style={{ width: '100%' }} />
                     </Col>
                     <Col xs={24} md={6}>
-                        <Button
-                            icon={<PrinterOutlined />}
-                            onClick={handleGeneratePdf}
-                            disabled={filteredCustomerSummary.length === 0 || isGeneratingPdf}
-                            loading={isGeneratingPdf}
-                            style={{ width: '100%' }} // Buat full width di mobile
-                        >
-                            Cetak PDF Laporan
+                        <Button icon={<PrinterOutlined />} onClick={handleGeneratePdf} disabled={filteredCustomerSummary.length === 0 || isGeneratingPdf} loading={isGeneratingPdf} style={{ width: '100%' }}>
+                            Cetak PDF
                         </Button>
                     </Col>
                 </Row>
                 
-                {/* --- Tabel --- */}
-                <Spin spinning={isFiltering} tip="Mencari pelanggan...">
+                <Spin spinning={isFiltering || loadingTransaksi} tip={loadingTransaksi ? "Memuat data..." : "Mencari..."}>
                     <TransaksiJualTableComponent
                         columns={columns}
                         dataSource={filteredCustomerSummary}
-                        loading={loadingTransaksi} // Loading data utama saja
-                        isFiltering={false} // Indikator filter ditangani Spin
+                        loading={false} 
+                        isFiltering={false} 
                         pagination={pagination}
                         handleTableChange={handleTableChange}
                         tableScrollX={tableScrollX}
@@ -273,33 +250,10 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi }) 
                 </Spin>
             </Card>
 
-            {/* --- Modal PDF --- */}
-             <Modal
-                title={pdfTitle} open={isPdfModalOpen} onCancel={handleClosePdfModal}
-                width="95vw" style={{ top: 20 }} // Sedikit turunkan
-                destroyOnClose
-                footer={[
-                    <Button key="close" onClick={handleClosePdfModal}>Tutup</Button>,
-                    navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={handleSharePdf} disabled={isGeneratingPdf || !pdfBlob}>Bagikan File</Button>),
-                    <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadPdf} disabled={isGeneratingPdf || !pdfBlob}>Unduh</Button>
-                ]}
-                bodyStyle={{ padding: 0, height: 'calc(100vh - 150px)', position: 'relative' }} // Sesuaikan tinggi body
-            >
-                {isGeneratingPdf && (
-                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.7)', zIndex: 10 }}>
-                        <Spin size="large" tip="Membuat file PDF..." />
-                    </div>
-                )}
-                {!isGeneratingPdf && pdfBlob ? (
-                    <div style={{ height: '100%', width: '100%', overflow: 'auto' }}>
-                        <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-                            {/* Beri key unik agar viewer re-render saat blob berubah */}
-                            <Viewer key={pdfFileName} fileUrl={URL.createObjectURL(pdfBlob)} />
-                        </Worker>
-                    </div>
-                ) : (
-                    !isGeneratingPdf && (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}><Empty description="Gagal memuat PDF atau PDF belum dibuat." /></div>)
-                )}
+            {/* Modal PDF (Sama seperti sebelumnya) */}
+            <Modal title={pdfTitle} open={isPdfModalOpen} onCancel={handleClosePdfModal} width="95vw" style={{ top: 20 }} destroyOnClose footer={[ <Button key="close" onClick={handleClosePdfModal}>Tutup</Button>, navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={handleSharePdf} disabled={isGeneratingPdf || !pdfBlob}>Bagikan File</Button>), <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadPdf} disabled={isGeneratingPdf || !pdfBlob}>Unduh</Button> ]} bodyStyle={{ padding: 0, height: 'calc(100vh - 150px)', position: 'relative' }}>
+                {isGeneratingPdf && ( <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.7)', zIndex: 10 }}> <Spin size="large" tip="Membuat file PDF..." /> </div> )}
+                {!isGeneratingPdf && pdfBlob ? ( <div style={{ height: '100%', width: '100%', overflow: 'auto' }}> <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js"> <Viewer key={pdfFileName} fileUrl={URL.createObjectURL(pdfBlob)} /> </Worker> </div> ) : ( !isGeneratingPdf && (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}><Empty description="Gagal memuat PDF atau PDF belum dibuat." /></div>) )}
             </Modal>
         </>
     );
