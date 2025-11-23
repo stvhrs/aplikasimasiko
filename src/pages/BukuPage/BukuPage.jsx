@@ -248,16 +248,16 @@ const BukuPage = () => {
             render: percentFormatter,
             sorter: (a, b) => (Number(a.diskonJual) || 0) - (Number(b.diskonJual) || 0)
         },
-        { 
-            title: 'Mapel', 
-            dataIndex: 'mapel', 
-            key: 'mapel', 
-            width: 200, 
-            filters: mapelFilters, 
-            filteredValue: columnFilters.mapel || null, 
-            onFilter: (v, r) => r.mapel === v,
-            sorter: (a, b) => (a.mapel || '').localeCompare(b.mapel || '')
-        },
+        // { 
+        //     title: 'Mapel', 
+        //     dataIndex: 'mapel', 
+        //     key: 'mapel', 
+        //     width: 200, 
+        //     filters: mapelFilters, 
+        //     filteredValue: columnFilters.mapel || null, 
+        //     onFilter: (v, r) => r.mapel === v,
+        //     sorter: (a, b) => (a.mapel || '').localeCompare(b.mapel || '')
+        // },
         { 
             title: 'Kelas', 
             dataIndex: 'kelas', 
@@ -268,30 +268,30 @@ const BukuPage = () => {
             filteredValue: columnFilters.kelas || null,
             sorter: (a, b) => String(a.kelas || '').localeCompare(String(b.kelas || ''), undefined, { numeric: true })
         },
-        { 
-            title: 'Tipe Buku', 
-            dataIndex: 'tipe_buku', 
-            key: 'tipe_buku', 
-            width: 150, 
-            filters: tipeBukuFilters, 
-            filteredValue: columnFilters.tipe_buku || null,
-            sorter: (a, b) => (a.tipe_buku || '').localeCompare(b.tipe_buku || '')
-        },
-        {
-            title: 'HET',
-            dataIndex: 'isHet',
-            key: 'isHet',
-            width: 80,
-            align: 'center',
-            render: (isHet) => isHet ? <Tag color="green">IYA</Tag> : <Tag color="red">TIDAK</Tag>,
-            filters: [
-                { text: 'IYA (HET)', value: true },
-                { text: 'TIDAK', value: false },
-            ],
-            filteredValue: columnFilters.isHet || null,
-            onFilter: (value, record) => record.isHet === value,
-            sorter: (a, b) => (a.isHet === b.isHet) ? 0 : a.isHet ? -1 : 1
-        }, 
+        // { 
+        //     title: 'Tipe Buku', 
+        //     dataIndex: 'tipe_buku', 
+        //     key: 'tipe_buku', 
+        //     width: 150, 
+        //     filters: tipeBukuFilters, 
+        //     filteredValue: columnFilters.tipe_buku || null,
+        //     sorter: (a, b) => (a.tipe_buku || '').localeCompare(b.tipe_buku || '')
+        // },
+        // {
+        //     title: 'HET',
+        //     dataIndex: 'isHet',
+        //     key: 'isHet',
+        //     width: 80,
+        //     align: 'center',
+        //     render: (isHet) => isHet ? <Tag color="green">IYA</Tag> : <Tag color="red">TIDAK</Tag>,
+        //     filters: [
+        //         { text: 'IYA (HET)', value: true },
+        //         { text: 'TIDAK', value: false },
+        //     ],
+        //     filteredValue: columnFilters.isHet || null,
+        //     onFilter: (value, record) => record.isHet === value,
+        //     sorter: (a, b) => (a.isHet === b.isHet) ? 0 : a.isHet ? -1 : 1
+        // }, 
         {
             title: 'Tahun',
             dataIndex: 'tahunTerbit',
@@ -303,15 +303,15 @@ const BukuPage = () => {
             filteredValue: columnFilters.tahunTerbit || null,
             sorter: (a, b) => (Number(a.tahunTerbit) || 0) - (Number(b.tahunTerbit) || 0)
         },
-        { 
-            title: 'Peruntukan', 
-            dataIndex: 'peruntukan', 
-            key: 'peruntukan', 
-            width: 120, 
-            filters: peruntukanFilters, 
-            filteredValue: columnFilters.peruntukan || null,
-            sorter: (a, b) => (a.peruntukan || '').localeCompare(b.peruntukan || '')
-        },
+        // { 
+        //     title: 'Peruntukan', 
+        //     dataIndex: 'peruntukan', 
+        //     key: 'peruntukan', 
+        //     width: 120, 
+        //     filters: peruntukanFilters, 
+        //     filteredValue: columnFilters.peruntukan || null,
+        //     sorter: (a, b) => (a.peruntukan || '').localeCompare(b.peruntukan || '')
+        // },
         { 
             title: 'Aksi', 
             key: 'aksi', 

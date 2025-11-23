@@ -188,10 +188,10 @@ export default function TransaksiJualPage() {
     // Komponen Footer untuk Tabel
     const TableFooter = () => (
         <div style={{ 
-            padding: '16px', 
+            padding: '18px', 
             backgroundColor: '#fafafa', 
             borderTop: '1px solid #e8e8e8',
-            marginTop: '16px',
+            marginTop: '18px',
             borderRadius: '0 0 8px 8px'
         }}>
             <Row justify="space-between" align="middle">
@@ -207,20 +207,20 @@ export default function TransaksiJualPage() {
                             title="Total Tagihan" 
                             value={footerTotals.totalTagihan} 
                             formatter={formatCurrency}
-                            valueStyle={{ fontSize: '16px', fontWeight: 600 }}
+                            valueStyle={{ fontSize: '18px', fontWeight: 600 }}
                         />
                         <Statistic 
                             title="Total Terbayar" 
                             value={footerTotals.totalTerbayar} 
                             formatter={formatCurrency}
-                            valueStyle={{ fontSize: '16px', fontWeight: 600, color: '#3f8600' }}
+                            valueStyle={{ fontSize: '18px', fontWeight: 600, color: '#3f8600' }}
                         />
                         <Statistic 
                             title="Total Sisa" 
                             value={footerTotals.totalSisa} 
                             formatter={formatCurrency}
                             valueStyle={{ 
-                                fontSize: '16px', 
+                                fontSize: '18px', 
                                 fontWeight: 600, 
                                 color: footerTotals.totalSisa > 0 ? '#cf1322' : '#3f8600' 
                             }}
@@ -423,9 +423,9 @@ export default function TransaksiJualPage() {
                             Ringkasan Transaksi {dateTitle}
                         </Title>
                         <Row gutter={[16, 16]}>
-                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Tagihan" value={recapData.totalTagihan} formatter={formatCurrency} /></Card></Col>
-                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Terbayar" value={recapData.totalTerbayar} formatter={formatCurrency} valueStyle={{ color: '#3f8600' }} suffix={`(${paidPercent.toFixed(1)}%)`} /></Card></Col>
-                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Sisa" value={recapData.sisaTagihan} formatter={formatCurrency} valueStyle={{ color: recapData.sisaTagihan > 0 ? '#cf1322' : '#3f8600' }} suffix={`(${outstandingPercent.toFixed(1)}%)`} /></Card></Col>
+                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Tagihan" value={recapData.totalTagihan} formatter={formatCurrency} valueStyle={{fontSize: '18px',fontWeight:600, }} /></Card></Col>
+                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Terbayar" value={recapData.totalTerbayar} formatter={formatCurrency} valueStyle={{fontSize: '18px',fontWeight:600, color: '#3f8600' }} suffix={`(${paidPercent.toFixed(1)}%)`} /></Card></Col>
+                            <Col xs={24} lg={8}><Card variant="borderless" style={{ backgroundColor: '#f0f2f5' }}><Statistic title="Total Sisa" value={recapData.sisaTagihan} formatter={formatCurrency} valueStyle={{ fontSize: '18px',fontWeight:600, color: recapData.sisaTagihan > 0 ? '#cf1322' : '#3f8600' }} suffix={`(${outstandingPercent.toFixed(1)}%)`} /></Card></Col>
                         </Row>
                     </Card>
 
