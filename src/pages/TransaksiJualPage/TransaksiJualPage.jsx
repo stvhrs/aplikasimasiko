@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useDeferredValue } from 'react';
 import {
     Layout, Card, Spin, Empty, Typography, Input, Row, Col, Statistic, Tag, Button, Modal,
-    Dropdown, Menu, App, DatePicker, Space, Tabs, Divider, Tooltip
+    Dropdown, Menu, App, DatePicker, Space, Tabs, Divider, Tooltip, Grid
 } from 'antd';
 import {
     PlusOutlined, MoreOutlined, DownloadOutlined, ShareAltOutlined, EditOutlined,
@@ -27,6 +27,7 @@ const { Content } = Layout;
 const { Title, Text } = Typography;
 const { Search } = Input;
 const { RangePicker } = DatePicker;
+const { useBreakpoint } = Grid;
 
 // --- Helpers ---
 const formatCurrency = (value) =>
@@ -50,6 +51,7 @@ const chipStyle = {
 
 export default function TransaksiJualPage() {
     const { message } = App.useApp();
+    const screens = useBreakpoint(); // Hook untuk mendeteksi ukuran layar (xs, sm, md, lg, etc.)
 
     // ========================================================================
     // 1. STATE & FILTER CONFIGURATION
@@ -118,10 +120,9 @@ export default function TransaksiJualPage() {
     // 3. CLIENT SIDE FILTERING (Hanya Mempengaruhi Tampilan TABEL)
     // ========================================================================
     const filteredTransaksi = useMemo(() => {
-        // SAFETY CHECK: Gunakan fallback array kosong []
         let data = [...(deferredAllTransaksi || [])];
 
-        // Filter Status (Dipicu oleh Header Tabel)
+        // Filter Status
         if (deferredSelectedStatus.length > 0) {
             data = data.filter((tx) => deferredSelectedStatus.includes(normalizeStatus(tx.statusPembayaran)));
         }
@@ -141,10 +142,9 @@ export default function TransaksiJualPage() {
     }, [deferredAllTransaksi, deferredSelectedStatus, deferredDebouncedSearch]);
 
     // ========================================================================
-    // 4. KALKULASI RINGKASAN (Tidak Terpengaruh Filter Tabel)
+    // 4. KALKULASI RINGKASAN (Global)
     // ========================================================================
     const recapData = useMemo(() => {
-        // Gunakan deferredAllTransaksi (Data Mentah) dengan safety check
         const dataToRecap = deferredAllTransaksi || []; 
 
         const totals = dataToRecap.reduce(
@@ -163,10 +163,9 @@ export default function TransaksiJualPage() {
     }, [deferredAllTransaksi, deferredDebouncedSearch, deferredSelectedStatus, isAllTime]);
 
     // ========================================================================
-    // 5. KALKULASI UNTUK FOOTER TABEL (Terpengaruh Filter Tabel)
+    // 5. KALKULASI UNTUK FOOTER TABEL (Terpengaruh Filter)
     // ========================================================================
     const footerTotals = useMemo(() => {
-        // Gunakan filteredTransaksi yang sudah terpengaruh oleh semua filter
         const filteredData = filteredTransaksi || [];
         
         const totals = filteredData.reduce(
@@ -185,95 +184,98 @@ export default function TransaksiJualPage() {
         };
     }, [filteredTransaksi]);
 
-    // Komponen Footer untuk Tabel
-    const TableFooter = () => (
-        <div style={{ 
-            padding: '18px', 
-            backgroundColor: '#fafafa', 
-            borderTop: '1px solid #e8e8e8',
-            marginTop: '18px',
-            borderRadius: '0 0 8px 8px'
-        }}>
-            <Row justify="space-between" align="middle">
-                <Col>
-                    <Text strong>
-                        Menampilkan {footerTotals.totalTransaksi} transaksi
-                        {(deferredDebouncedSearch || deferredSelectedStatus.length > 0) && " (setelah filter)"}
+    // --- KOMPONEN FOOTER TABEL RESPONSIF ---
+    const TableFooter = useCallback(() => {
+        const paidPercentage = footerTotals.totalTagihan > 0 ? (footerTotals.totalTerbayar / footerTotals.totalTagihan) * 100 : 0;
+        const outstandingPercentage = footerTotals.totalTagihan > 0 ? (footerTotals.totalSisa / footerTotals.totalTagihan) * 100 : 0;
+
+        const tagihanColWidth = 160; 
+        const sisaColWidth = 160; 
+        const statusAksiColWidth = 240; 
+
+        if (footerTotals.totalTransaksi === 0) return null;
+
+        return (
+            <div style={{ 
+                borderTop: '1px solid #e8e8e8', 
+                backgroundColor: '#f0f2f5', 
+                padding: screens.xs ? '12px' : '12px 16px', // Padding lebih kecil di mobile
+                borderRadius: '0 0 8px 8px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                fontWeight: 600,
+            }}>
+                {/* Kiri: Jumlah Data & Progress Bar */}
+                <div style={{ flex: screens.xs ? '1 1 100%' : '1 1 50%', minWidth: screens.xs ? 'auto' : '300px', paddingRight: screens.xs ? 0 : '16px', marginBottom: screens.xs ? '12px' : 0 }}>
+                    <Text strong style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
+                        Ringkasan Data Tampil ({footerTotals.totalTransaksi} Transaksi)
                     </Text>
-                </Col>
-                <Col>
-                    <Space size="large">
-                        <Statistic 
-                            title="Total Tagihan" 
-                            value={footerTotals.totalTagihan} 
-                            formatter={formatCurrency}
-                            valueStyle={{ fontSize: '18px', fontWeight: 600 }}
-                        />
-                        <Statistic 
-                            title="Total Terbayar" 
-                            value={footerTotals.totalTerbayar} 
-                            formatter={formatCurrency}
-                            valueStyle={{ fontSize: '18px', fontWeight: 600, color: '#3f8600' }}
-                        />
-                        <Statistic 
-                            title="Total Sisa" 
-                            value={footerTotals.totalSisa} 
-                            formatter={formatCurrency}
-                            valueStyle={{ 
-                                fontSize: '18px', 
-                                fontWeight: 600, 
-                                color: footerTotals.totalSisa > 0 ? '#cf1322' : '#3f8600' 
-                            }}
-                        />
-                    </Space>
-                </Col>
-            </Row>
-            
-            {/* Progress Bar Visualisasi */}
-            {footerTotals.totalTagihan > 0 && (
-                <div style={{ marginTop: '12px' }}>
-                    <Row gutter={8} align="middle">
-                        <Col flex="none">
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                                Rasio Pembayaran:
-                            </Text>
-                        </Col>
-                        <Col flex="auto">
-                            <div style={{ 
+                    
+                    {/* Visualisasi Progress Bar */}
+                    <Tooltip title={`Terbayar: ${paidPercentage.toFixed(1)}% | Sisa: ${outstandingPercentage.toFixed(1)}%`}>
+                        <div 
+                            style={{ 
                                 display: 'flex', 
-                                height: '8px', 
-                                backgroundColor: '#f0f0f0', 
+                                height: '10px', 
+                                backgroundColor: '#ff7875', 
                                 borderRadius: '4px',
-                                overflow: 'hidden'
-                            }}>
-                                <div 
-                                    style={{ 
-                                        flex: `${(footerTotals.totalTerbayar / footerTotals.totalTagihan) * 100}%`,
-                                        backgroundColor: '#52c41a',
-                                        transition: 'all 0.3s'
-                                    }} 
-                                    title={`Terbayar: ${((footerTotals.totalTerbayar / footerTotals.totalTagihan) * 100).toFixed(1)}%`}
-                                />
-                                <div 
-                                    style={{ 
-                                        flex: `${(footerTotals.totalSisa / footerTotals.totalTagihan) * 100}%`,
-                                        backgroundColor: '#ff4d4f',
-                                        transition: 'all 0.3s'
-                                    }} 
-                                    title={`Sisa: ${((footerTotals.totalSisa / footerTotals.totalTagihan) * 100).toFixed(1)}%`}
-                                />
-                            </div>
-                        </Col>
-                        <Col flex="none">
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                                {((footerTotals.totalTerbayar / footerTotals.totalTagihan) * 100).toFixed(1)}% Terbayar
-                            </Text>
-                        </Col>
-                    </Row>
+                                overflow: 'hidden',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <div style={{ width: `${paidPercentage}%`, backgroundColor: '#52c41a', transition: 'width 0.3s' }} />
+                        </div>
+                    </Tooltip>
                 </div>
-            )}
-        </div>
-    );
+
+                {/* Tampilan Desktop: Sejajar dengan Kolom */}
+                {!screens.xs && (
+                    <div style={{ 
+                        flex: '0 0 auto',
+                        display: 'flex',
+                        marginLeft: 'auto', 
+                        minWidth: `${tagihanColWidth + sisaColWidth + statusAksiColWidth}px`,
+                        alignItems: 'center'
+                    }}>
+                        {/* Total Tagihan */}
+                        <div style={{ width: `${tagihanColWidth}px`, textAlign: 'right', padding: '0 8px', borderLeft: '1px solid #d9d9d9' }}>
+                            <Text strong style={{ display: 'block', fontSize: '14px' }}>{formatCurrency(footerTotals.totalTagihan)}</Text>
+                            <Text type="secondary" style={{ fontSize: '11px' }}>Total Tagihan</Text>
+                        </div>
+                        
+                        {/* Total Sisa */}
+                        <div style={{ width: `${sisaColWidth}px`, textAlign: 'right', padding: '0 8px', borderLeft: '1px solid #d9d9d9' }}>
+                            <Text strong style={{ fontSize: '14px', color: footerTotals.totalSisa > 0 ? '#cf1322' : '#3f8600' }}>
+                                {formatCurrency(footerTotals.totalSisa)}
+                            </Text>
+                            <Text type="secondary" style={{ display: 'block', fontSize: '11px' }}>Sisa Tagihan</Text>
+                        </div>
+
+                        {/* Spacer */}
+                        <div style={{ width: `${statusAksiColWidth}px`, borderLeft: '1px solid #d9d9d9', }} />
+                    </div>
+                )}
+
+                {/* Tampilan Mobile: Statistik Stacked */}
+                {screens.xs && (
+                    <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                         <div style={{ width: '48%', backgroundColor: '#fff', padding: '8px', borderRadius: '4px', border: '1px solid #f0f0f0' }}>
+                            <Text type="secondary" style={{ fontSize: '11px' }}>Total Tagihan</Text>
+                            <div style={{ fontSize: '13px', fontWeight: 700 }}>{formatCurrency(footerTotals.totalTagihan)}</div>
+                        </div>
+                         <div style={{ width: '48%', backgroundColor: '#fff', padding: '8px', borderRadius: '4px', border: '1px solid #f0f0f0' }}>
+                            <Text type="secondary" style={{ fontSize: '11px' }}>Total Sisa</Text>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: footerTotals.totalSisa > 0 ? '#cf1322' : '#3f8600' }}>
+                                {formatCurrency(footerTotals.totalSisa)}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }, [footerTotals, screens.xs]);
 
     // ========================================================================
     // 6. HANDLERS
@@ -349,7 +351,6 @@ export default function TransaksiJualPage() {
                 if (filterInfo.length > 0) doc.text(`Filter Aktif: ${filterInfo.join(' | ')}`, 14, 28);
                 else doc.text('Filter Aktif: Menampilkan Semua', 14, 28);
                 
-                // Header Ringkasan di PDF (Optional, sesuaikan kebutuhan)
                 autoTable(doc, { startY: startY, body: [['Total Tagihan', formatCurrency(recapData.totalTagihan)], ['Total Terbayar', formatCurrency(recapData.totalTerbayar)], ['Total Sisa Tagihan', formatCurrency(recapData.sisaTagihan)]], theme: 'grid', styles: { fontSize: 10, cellPadding: 2 }, columnStyles: { 0: { fontStyle: 'bold', halign: 'right' }, 1: { halign: 'right' } }, didDrawCell: (data) => { if (data.section === 'body') { if (data.row.index === 1) data.cell.styles.textColor = [40, 167, 69]; if (data.row.index === 2) data.cell.styles.textColor = [220, 53, 69]; } } });
                 
                 const tableHead = ['Tanggal', 'ID Transaksi', 'Pelanggan', 'Total Tagihan', 'Sisa', 'Status'];
@@ -528,7 +529,7 @@ export default function TransaksiJualPage() {
 
     return (
         <Layout>
-            <Content style={{ padding: '24px', backgroundColor: '#f0f2f5' }}>
+            <Content style={{ padding: screens.xs ? '12px' : '24px', backgroundColor: '#f0f2f5' }}>
                 <Tabs 
                     defaultActiveKey="1" 
                     type="card" 
