@@ -76,7 +76,7 @@ const generateRandomSalesTransaction = (lastInvoiceNumber) => {
     }
 
     // 5. Status Pembayaran Acak & Histori
-    const statuses = ['Belum Bayar', 'DP', 'Lunas'];
+    const statuses = ['Belum', 'DP', 'Lunas'];
     const statusPembayaran = statuses[Math.floor(Math.random() * statuses.length)];
     let jumlahTerbayar = 0;
     let historiPembayaran = null;

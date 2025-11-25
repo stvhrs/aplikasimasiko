@@ -1,16 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Table, Input, Row, Col, Typography, DatePicker, Statistic, Button, Space, Spin, message } from 'antd';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Card, Table, Input, Row, Col, Typography, DatePicker, Statistic, Button, Space, Spin } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 
-// --- FIREBASE IMPORTS ---
-import { getDatabase, ref, query, orderByChild, startAt, endAt, get } from "firebase/database";
-
-// Utils
-import { timestampFormatter, numberFormatter } from '../../../utils/formatters'; 
+// --- CUSTOM HOOKS ---
+import { useHistoriStokStream } from '../../../hooks/useFirebaseData'; // Sesuaikan path import ini
 import useDebounce from '../../../hooks/useDebounce'; 
+import { timestampFormatter, numberFormatter } from '../../../utils/formatters';
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
@@ -19,85 +17,38 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const StokHistoryTab = () => {
-    // --- 1. STATE DEFAULT DATE: 1 Bulan Lalu s/d Akhir Bulan Ini ---
+    // --- 1. STATE & PARAMS ---
     const [dateRange, setDateRange] = useState([
         dayjs().subtract(1, 'month').startOf('month'), 
         dayjs().endOf('month')
     ]);
 
-    // State Data
-    const [historyData, setHistoryData] = useState([]);
-    const [loading, setLoading] = useState(false); // State loading manual
+    // Menyiapkan parameter untuk hook (convert dayjs to timestamp)
+    const streamParams = useMemo(() => ({
+        startDate: dateRange && dateRange[0] ? dateRange[0].startOf('day').valueOf() : null,
+        endDate: dateRange && dateRange[1] ? dateRange[1].endOf('day').valueOf() : null
+    }), [dateRange]);
 
-    // State Filter UI
+    // --- 2. USE STREAM HOOK (Gantikan manual fetch) ---
+    // Data akan otomatis update jika ada perubahan di Firebase atau jika dateRange berubah
+    const { historyList, loadingHistory } = useHistoriStokStream(streamParams);
+
+    // --- 3. FILTERING CLIENT SIDE (Search & Penerbit) ---
     const [searchText, setSearchText] = useState('');
     const debouncedSearchText = useDebounce(searchText, 300);
     const [selectedPenerbit, setSelectedPenerbit] = useState(undefined);
 
-    // --- 2. FETCH DATA FUNCTION (Langsung ke Firebase) ---
-    const fetchHistoryData = useCallback(async () => {
-        if (!dateRange || dateRange.length !== 2) return;
-
-        setLoading(true);
-        try {
-            // Konversi dayjs ke timestamp ms
-            const startTimestamp = dateRange[0].startOf('day').valueOf();
-            const endTimestamp = dateRange[1].endOf('day').valueOf();
-
-            const db = getDatabase();
-            const historiRef = ref(db, 'historiStok'); 
-
-            // Query: Ambil data di rentang waktu tersebut
-            const historiQuery = query(
-                historiRef, 
-                orderByChild('timestamp'), 
-                startAt(startTimestamp), 
-                endAt(endTimestamp)
-            );
-
-            const snapshot = await get(historiQuery);
-
-            if (snapshot.exists()) {
-                const rawData = snapshot.val();
-                // Konversi Object ke Array
-                const formattedData = Object.keys(rawData).map(key => ({
-                    id: key,
-                    ...rawData[key]
-                }));
-                
-                // Sort descending (terbaru diatas)
-                formattedData.sort((a, b) => b.timestamp - a.timestamp);
-                
-                setHistoryData(formattedData);
-            } else {
-                setHistoryData([]);
-            }
-        } catch (error) {
-            console.error("Error fetch history:", error);
-            message.error("Gagal memuat riwayat stok");
-        } finally {
-            setLoading(false);
-        }
-    }, [dateRange]);
-
-    // Fetch otomatis saat dateRange berubah
-    useEffect(() => {
-        fetchHistoryData();
-    }, [fetchHistoryData]);
-
-    // --- 3. FILTERING CLIENT SIDE (Penerbit & Search Text) ---
-    // Note: Filter Tanggal sudah dilakukan di level Database (fetchHistoryData)
-    
     // List Penerbit Unik untuk Filter Kolom
     const penerbitList = useMemo(() => {
-        const allPenerbit = historyData
+        if (!historyList) return [];
+        const allPenerbit = historyList
             .map(item => item.penerbit)
             .filter(Boolean);
         return [...new Set(allPenerbit)].sort();
-    }, [historyData]);
+    }, [historyList]);
 
     const filteredHistory = useMemo(() => {
-        let data = [...historyData];
+        let data = [...historyList];
 
         // Filter Penerbit
         if (selectedPenerbit) {
@@ -116,13 +67,11 @@ const StokHistoryTab = () => {
         }
         
         return data;
-    }, [historyData, debouncedSearchText, selectedPenerbit]);
+    }, [historyList, debouncedSearchText, selectedPenerbit]);
 
     // --- 4. DASHBOARD RINGKASAN ---
     const dashboardData = useMemo(() => {
         return filteredHistory.reduce((acc, item) => {
-            // Asumsi field di DB adalah 'perubahan' (angka positif/negatif)
-            // Atau jika fieldnya 'qty' dan 'tipe', sesuaikan logika ini
             const perubahan = Number(item.perubahan) || 0; 
             
             if (perubahan > 0) {
@@ -134,7 +83,7 @@ const StokHistoryTab = () => {
         }, { totalMasuk: 0, totalKeluar: 0 });
     }, [filteredHistory]);
 
-    // Handler Table Change
+    // --- 5. HANDLERS ---
     const handleTableChange = (pagination, filters, sorter) => {
         const penerbitFilterValue = filters.penerbit;
         if (penerbitFilterValue && penerbitFilterValue.length > 0) {
@@ -144,15 +93,22 @@ const StokHistoryTab = () => {
         }
     };
 
-    // Handler Reset
     const resetFilters = () => {
         setSearchText('');
-        // Kita reset tanggal ke default awal (1 bulan lalu) atau biarkan saja
+        // Reset tanggal ke default 1 bulan terakhir
         setDateRange([dayjs().subtract(1, 'month').startOf('month'), dayjs().endOf('month')]);
         setSelectedPenerbit(undefined);
     };
 
-    // Definisi Kolom
+    // Tombol refresh hanya mereset date range trigger agar hook melakukan refetch/re-sync
+    // Karena ini stream, tombol refresh sebenarnya jarang dibutuhkan kecuali koneksi putus
+    const handleRefresh = () => {
+       const current = [...dateRange];
+       setDateRange([]); // Clear sesaat
+       setTimeout(() => setDateRange(current), 100);
+    };
+
+    // --- 6. COLUMNS ---
     const historyColumns = [
         {
             title: 'Waktu', dataIndex: 'timestamp', key: 'timestamp',
@@ -199,7 +155,7 @@ const StokHistoryTab = () => {
     const isFilterActive = debouncedSearchText || selectedPenerbit;
 
     return (
-        <Spin spinning={loading} tip="Memuat data dari server...">
+        <Spin spinning={loadingHistory} tip="Menyinkronkan data...">
             {/* --- Card Ringkasan --- */}
             <Card style={{ marginBottom: 16 }}>
                 <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
@@ -207,7 +163,7 @@ const StokHistoryTab = () => {
                          <Title level={5} style={{ margin: 0 }}>Ringkasan Periode Ini</Title>
                     </Col>
                     <Col>
-                         <Button icon={<ReloadOutlined />} onClick={fetchHistoryData} loading={loading}>Refresh Data</Button>
+                         <Button icon={<ReloadOutlined />} onClick={handleRefresh}>Sync Ulang</Button>
                     </Col>
                 </Row>
                 
@@ -271,7 +227,7 @@ const StokHistoryTab = () => {
                 <Table
                     columns={historyColumns}
                     dataSource={filteredHistory}
-                    loading={loading} 
+                    loading={loadingHistory} 
                     rowKey="id"
                     size="small"
                     scroll={{ x: 1300, y: 'calc(100vh - 500px)' }}

@@ -1,27 +1,24 @@
-// src/pages/pelanggan/PelangganPage.jsx
 import React, { useState, useMemo, useCallback, useDeferredValue } from 'react';
 import {
-    Layout, Card, Table, Button, Input, Space, Typography, Popconfirm, message, Spin, Checkbox, Tag // Tambah Checkbox, Tag
-,Row,Col} from 'antd';
+    Layout, Card, Table, Button, Input, Space, Typography, Popconfirm, message, Spin, Tag, Row, Col
+} from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ref, remove } from 'firebase/database';
-import { db } from '../../api/firebase'; // Sesuaikan path
+import { db } from '../../api/firebase'; 
 
-// --- (PENTING) Impor Hook Singleton Pelanggan ---
-// Pastikan hook ini sudah dipisah ke file terpusat, misal:
-import { usePelangganData } from './useplanggandata'; // Sesuaikan path jika berbeda
-// ---------------------------------------------
+// --- IMPORT HOOK BARU DARI FILE PUSAT ---
+import { usePelangganStream } from '../../hooks/useFirebaseData'; 
 
-import useDebounce from '../../hooks/useDebounce'; // Sesuaikan path
-import PelangganForm from './components/PelangganForm'; // Sesuaikan path
+import useDebounce from '../../hooks/useDebounce'; 
+import PelangganForm from './components/PelangganForm'; 
 
 const { Content } = Layout;
 const { Title } = Typography;
 const { Search } = Input;
 
 export default function PelangganPage() {
-    // --- Gunakan Hook Singleton ---
-    const { pelangganList, loadingPelanggan } = usePelangganData();
+    // --- Gunakan Hook Singleton (Anti-Reload) ---
+    const { pelangganList, loadingPelanggan } = usePelangganStream();
     // ----------------------------
 
     const [searchText, setSearchText] = useState('');
@@ -30,23 +27,27 @@ export default function PelangganPage() {
     const deferredPelangganList = useDeferredValue(pelangganList);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingPelanggan, setEditingPelanggan] = useState(null); // null for create, object for edit
+    const [editingPelanggan, setEditingPelanggan] = useState(null); 
 
     const [pagination, setPagination] = useState({
-        current: 1, pageSize: 25, showSizeChanger: true,        pageSizeOptions: ['25', '50', '100', '200'],
-
+        current: 1, 
+        pageSize: 25, 
+        showSizeChanger: true,        
+        pageSizeOptions: ['25', '50', '100', '200'],
         showTotal: (total, range) => `${range[0]}-${range[1]} dari ${total} pelanggan`
     });
 
     const isFiltering = pelangganList !== deferredPelangganList || debouncedSearchText !== deferredSearch;
 
     const filteredPelanggan = useMemo(() => {
-        let data = deferredPelangganList;
+        // Safety check untuk deferredPelangganList (cegah undefined)
+        let data = deferredPelangganList || [];
+        
         if (deferredSearch) {
             const query = deferredSearch.toLowerCase();
             data = data.filter(p =>
-                p.nama?.toLowerCase().includes(query) ||
-                p.telepon?.includes(query) // Cari telepon tanpa case-insensitive
+                (p.nama && p.nama.toLowerCase().includes(query)) ||
+                (p.telepon && p.telepon.includes(query)) 
             );
         }
         return data;
@@ -74,12 +75,11 @@ export default function PelangganPage() {
     const handleCloseModal = useCallback(() => {
         setIsModalOpen(false);
         // Set editing to null *after* modal closes to prevent flicker
-         setTimeout(() => setEditingPelanggan(null), 300);
+        setTimeout(() => setEditingPelanggan(null), 300);
     }, []);
 
      const handleFormSuccess = useCallback(() => {
-        handleCloseModal(); // Tutup modal setelah sukses
-        // Data akan update otomatis via listener global
+        handleCloseModal(); 
     }, [handleCloseModal]);
 
 
@@ -89,7 +89,6 @@ export default function PelangganPage() {
         try {
             await remove(ref(db, `pelanggan/${idPelanggan}`));
             message.success({ content: 'Pelanggan berhasil dihapus', key: 'del_pel' });
-            // Data list akan update otomatis via listener global
         } catch (error) {
             console.error("Error deleting pelanggan:", error);
             message.error({ content: `Gagal menghapus: ${error.message}`, key: 'del_pel' });
@@ -107,7 +106,7 @@ export default function PelangganPage() {
             title: 'Nama Pelanggan',
             dataIndex: 'nama',
             key: 'nama',
-            sorter: (a, b) => a.nama.localeCompare(b.nama),
+            sorter: (a, b) => (a.nama || '').localeCompare(b.nama || ''),
             ellipsis: true,
         },
         {
@@ -124,11 +123,9 @@ export default function PelangganPage() {
             align: 'center',
             width: 150,
             render: (isSpesial) => isSpesial ? <Tag color="gold">Spesial</Tag> : <Tag>Biasa</Tag>,
-            // Filter sederhana
-             filters: [ { text: 'Spesial', value: true }, { text: 'Biasa', value: false } ],
-             onFilter: (value, record) => !!record.isSpesial === value,
+            filters: [ { text: 'Spesial', value: true }, { text: 'Biasa', value: false } ],
+            onFilter: (value, record) => !!record.isSpesial === value,
         },
-        // Tambahkan kolom lain jika perlu (Alamat, dll)
         {
             title: 'Aksi',
             key: 'aksi',
@@ -149,12 +146,11 @@ export default function PelangganPage() {
                 </Space>
             ),
         },
-    ], [pagination, handleOpenEdit, handleDelete]); // Tambahkan dependensi
+    ], [pagination, handleOpenEdit, handleDelete]);
 
     return (
         <Layout>
             <Content style={{ padding: '24px', backgroundColor: '#f0f2f5' }}>
-                <Title level={3} style={{ marginBottom: 24 }}>Manajemen Pelanggan</Title>
                 <Card>
                     <Row justify="space-between" align="middle" gutter={[16, 16]} style={{ marginBottom: 24 }}>
                         <Col xs={24} sm={12}>
@@ -173,32 +169,31 @@ export default function PelangganPage() {
                         </Col>
                     </Row>
 
-                    <Spin spinning={isFiltering || loadingPelanggan}>
+                    <Spin spinning={isFiltering || (loadingPelanggan && !deferredPelangganList?.length)}>
                         <Table
                             columns={columns}
                             dataSource={filteredPelanggan}
                             rowKey="id"
-                            loading={loadingPelanggan && !deferredPelangganList.length} // Loading awal saja
+                            loading={loadingPelanggan && !deferredPelangganList?.length} 
                             pagination={pagination}
                             onChange={handleTableChange}
                             scroll={{ x: 'max-content' }}
-                            rowClassName={(record, index) => (index % 2 === 0 ? 'table-row-even' : 'table-row-odd')} // Zebra stripes
+                            rowClassName={(record, index) => (index % 2 === 0 ? 'table-row-even' : 'table-row-odd')}
                         />
                     </Spin>
                 </Card>
 
                 {/* Modal Form Create/Edit */}
-                {/* Render kondisional untuk memastikan state form fresh */}
-                 {isModalOpen && (
+                {isModalOpen && (
                     <PelangganForm
-                         key={editingPelanggan?.id || 'create'} // Penting untuk reset/prefill
-                         open={isModalOpen}
-                         onCancel={handleCloseModal}
-                         onSuccess={handleFormSuccess}
-                         initialData={editingPelanggan}
-                         pelangganList={pelangganList} // Kirim list untuk cek duplikat
+                        key={editingPelanggan?.id || 'create'}
+                        open={isModalOpen}
+                        onCancel={handleCloseModal}
+                        onSuccess={handleFormSuccess}
+                        initialData={editingPelanggan}
+                        pelangganList={pelangganList}
                     />
-                 )}
+                )}
             </Content>
         </Layout>
     );

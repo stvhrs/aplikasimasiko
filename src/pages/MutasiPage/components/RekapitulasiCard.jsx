@@ -1,128 +1,170 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Card, Typography, Row, Col, Divider, Tag, Space } from 'antd'; // Tambahkan Tag dan Space jika KategoriChips ada di sini
-import { TipeTransaksi, KategoriPemasukan, KategoriPengeluaran } from '../../../constants';
-// Pastikan path ke formatters benar
-import { currencyFormatter } from '../../../utils/formatters'; 
+import React from 'react';
+import { Card, Row, Col, Statistic, Typography, Spin, Divider, Empty } from 'antd';
+import { ArrowUpOutlined, ArrowDownOutlined, CalendarOutlined, PieChartOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import 'dayjs/locale/id';
 
-const { Title, Text } = Typography;
+dayjs.locale('id');
+const { Text, Title } = Typography;
 
-const RekapitulasiCard = ({ rekapData, isFilterActive }) => {
-    const scrollRef = useRef(null);
-    const [showTopShadow, setShowTopShadow] = useState(false);
-    const [showBottomShadow, setShowBottomShadow] = useState(false);
+const currencyFormatter = (value) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value || 0);
 
-    // Ambil data dari prop
-    const { pemasukanEntries = [], pengeluaranEntries = [], totalPemasukan = 0, totalPengeluaran = 0 } = rekapData || {};
+const RekapitulasiCard = ({ rekapData, loading, dateRange }) => {
+    const { totalPemasukan, totalPengeluaran, pemasukanEntries, pengeluaranEntries } = rekapData;
 
-    // Efek untuk shadow scroll
-    useEffect(() => { 
-        const scrollContainer = scrollRef.current;
-        const handleScroll = () => { 
-            if (!scrollContainer) return; 
-            const { scrollTop, scrollHeight, clientHeight } = scrollContainer; 
-            const isAtBottom = scrollHeight - scrollTop - clientHeight < 1; 
-            setShowTopShadow(scrollTop > 0); 
-            setShowBottomShadow(!isAtBottom); 
-        };
-        const checkInitialScroll = () => { 
-            if (scrollContainer) { 
-                const hasScroll = scrollContainer.scrollHeight > scrollContainer.clientHeight; 
-                setShowTopShadow(false); 
-                setShowBottomShadow(hasScroll); 
-            } 
-        };
-        checkInitialScroll(); 
-        scrollContainer?.addEventListener('scroll', handleScroll);
-        
-        // Cek ulang saat data berubah
-        checkInitialScroll(); 
+    const dateText = dateRange && dateRange[0] && dateRange[1]
+        ? `${dayjs(dateRange[0]).format('DD MMM')} - ${dayjs(dateRange[1]).format('DD MMM YYYY')}`
+        : '...';
 
-        return () => { scrollContainer?.removeEventListener('scroll', handleScroll); };
-     }, [rekapData]); // Dependensi pada rekapData
+    // --- STYLES COMPACT (Kantip) ---
+    const cardStyle = {
+        padding: '0px 6px 0px 6px', // Standard Kantip Padding
+
+        height: '100%', borderRadius: 4, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        background: '#fff', display: 'flex', flexDirection: 'column'
+    };
+
+    const headerStyle = {
+        padding: '0px 0px 0px 0px ', // Standard Kantip Padding
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+    };
+
+    const summaryBlockStyle = (bgColor, color) => ({
+        background: bgColor,
+        borderRadius: 4,
+        padding: '10px 14px',
+        borderLeft: `3px solid ${color}`,
+        height: '100%',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center'
+    });
+
+    const listItemStyle = {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '6px 0',
+        borderBottom: '1px dashed #f5f5f5',
+        fontSize: '12px'
+    };
 
     return (
-        <Card style={{ height: '100%' }}>
-            {/* Judul dinamis berdasarkan filter */}
-            <Title level={5} style={{ marginTop: 0 }}>
-                Rekapitulasi {isFilterActive ? '(Hasil Filter)' : '(Semua Transaksi)'}
-            </Title>
-
-            <div style={{ position: 'relative' }}>
-                {/* Top Shadow */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: '10px', height: '16px', background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.12), transparent)', opacity: showTopShadow ? 1 : 0, transition: 'opacity 0.2s ease-in-out', zIndex: 1, pointerEvents: 'none', }}/>
-
-                {/* Konten Scrollable */}
-                <div ref={scrollRef} style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '10px' }}>
-                    <Title level={5} style={{ color: 'green', marginTop: 12 }}>Pemasukan</Title>
-                    <Divider style={{ marginTop: 0, marginBottom: 12 }} />
-                    {pemasukanEntries.length > 0 ? (
-                        pemasukanEntries.map(([kategori, jumlah], index) => (
-                            <React.Fragment key={`${kategori}-${index}`}> {/* Key lebih unik */}
-                                <Row justify="space-between" style={{ padding: '8px 0' }}>
-                                    <Col><Text>{kategori}</Text></Col>
-                                    <Col><Text strong>{currencyFormatter(jumlah)}</Text></Col>
-                                </Row>
-                                {index < pemasukanEntries.length - 1 && <Divider style={{ margin: 0 }} />}
-                            </React.Fragment>
-                        ))
-                    ) : <Text type="secondary">Tidak ada pemasukan.</Text>}
-
-                    <Title level={5} style={{ color: 'red', marginTop: '20px' }}>Pengeluaran</Title>
-                    <Divider style={{ marginTop: 0, marginBottom: 12 }} />
-                    {pengeluaranEntries.length > 0 ? (
-                        pengeluaranEntries.map(([kategori, jumlah], index) => (
-                             <React.Fragment key={`${kategori}-${index}`}> {/* Key lebih unik */}
-                                <Row justify="space-between" style={{ padding: '8px 0' }}>
-                                    <Col><Text>{kategori}</Text></Col>
-                                    {/* Jumlah pengeluaran sudah positif, formatter akan menanganinya */}
-                                    <Col><Text strong>{currencyFormatter(jumlah)}</Text></Col>
-                                </Row>
-                                {index < pengeluaranEntries.length - 1 && <Divider style={{ margin: 0 }} />}
-                            </React.Fragment>
-                        ))
-                    ) : <Text type="secondary">Tidak ada pengeluaran.</Text>}
+        <Card style={cardStyle} bodyStyle={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {/* Header Compact */}
+            <div style={headerStyle}>
+                <div style={{ display: 'flex', alignItems: 'center', }}>
+                    <div style={styles.iconBox('#1890ff', 'rgba(233, 239, 255, 1)')}>
+                           <PieChartOutlined style={{ color: '#1890ff' }} />               </div> 
+   <Text strong style={{ fontSize: 14 }}>Ringkasan</Text>   
                 </div>
-
-                {/* Bottom Shadow */}
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: '10px', height: '16px', background: 'linear-gradient(to top, rgba(0, 0, 0, 0.12), transparent)', opacity: showBottomShadow ? 1 : 0, transition: 'opacity 0.2s ease-in-out', zIndex: 1, pointerEvents: 'none', }}/>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f5f5f5', padding: '2px 8px', borderRadius: 4 }}>
+                    <CalendarOutlined style={{ fontSize: 10, color: '#8c8c8c' }} />
+                    <Text type="secondary" style={{ fontSize: 14 }}>{dateText}</Text>
+                </div>
             </div>
 
-            <Divider />
-            <Row justify="space-between">
-                <Col><Text strong>Total Pemasukan</Text></Col>
-                <Col><Text strong style={{ color: 'green' }}>{currencyFormatter(totalPemasukan)}</Text></Col>
-            </Row>
-            <Row justify="space-between" style={{ marginTop: 8 }}>
-                <Col><Text strong>Total Pengeluaran</Text></Col>
-                {/* totalPengeluaran sudah positif */}
-                <Col><Text strong style={{ color: 'red' }}>{currencyFormatter(totalPengeluaran)}</Text></Col>
-            </Row>
-             {/* Tambahkan Selisih */}
-             <Divider style={{marginTop: 12, marginBottom: 12}}/>
-             <Row justify="space-between" style={{ marginTop: 8 }}>
-                <Col><Text strong>Selisih</Text></Col>
-                {/* Logika selisih sekarang benar (totalPemasukan - totalPengeluaran) */}
-                <Col><Text strong style={{ color: (totalPemasukan - totalPengeluaran) >= 0 ? 'green' : 'red' }}>{currencyFormatter(totalPemasukan - totalPengeluaran)}</Text></Col>
-            </Row>
+            <Spin spinning={loading}>
+                <div style={{ padding: '12px 0' }}>
+                    {/* Total Summary */}
+                    <Row gutter={[10, 10]}>
+                        <Col span={12}>
+                            <div style={summaryBlockStyle('#f6ffed', '#52c41a')}>
+                                <Text type="secondary" style={{ fontSize: 14 }}>Total Masuk</Text>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: '#3f8600' }}>
+                                    {currencyFormatter(totalPemasukan)}
+                                </div>
+                            </div>
+                        </Col>
+                        <Col span={12}>
+                            <div style={summaryBlockStyle('#fff1f0', '#cf1322')}>
+                                <Text type="secondary" style={{ fontSize: 14 }}>Total Keluar</Text>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: '#cf1322' }}>
+                                    {currencyFormatter(totalPengeluaran)}
+                                </div>
+                            </div>
+                        </Col>
+                    </Row>
+
+                    <Divider style={{ margin: '12px 0' }} />
+
+                    {/* List Rincian Scrollable 
+                        maxHeight: '135px' -> Estimasi visual untuk menampilkan +/- 4 item 
+                        (sekitar 32px per item)
+                    */}
+                    <div style={{ maxHeight: '135px', overflowY: 'auto', paddingRight: 4 }}>
+                        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>Rincian Kategori</Text>
+
+                        {pemasukanEntries.length === 0 && pengeluaranEntries.length === 0 && (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Kosong" imageStyle={{ height: 40 }} />
+                        )}
+
+                        {pemasukanEntries.map(([key, val]) => val > 0 && (
+                            <div key={key} style={listItemStyle}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#52c41a' }}></div>
+                                    <Text style={{ color: '#595959', fontSize: 14 }}>{key}</Text>
+                                </div>
+                                <Text strong style={{ color: '#3f8600', fontSize: 14 }}>{currencyFormatter(val)}</Text>
+                            </div>
+                        ))}
+
+                        {pengeluaranEntries.map(([key, val]) => val > 0 && (
+                            <div key={key} style={listItemStyle}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#cf1322' }}></div>
+                                    <Text style={{ color: '#595959', fontSize: 14 }}>{key}</Text>
+                                </div>
+                                <Text strong style={{ color: '#cf1322', fontSize: 14 }}>{currencyFormatter(val)}</Text>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </Spin>
         </Card>
     );
 };
 
-// --- Komponen KategoriChips (Pindahkan ke file terpisah) ---
-// Hapus ini dari RekapitulasiCard.js jika sudah ada di MutasiPage.js
-// const chipStyle = { border: '1px solid #d9d9d9', padding: '4px 10px', borderRadius: '16px', minWidth: '130px', textAlign: 'center' };
-// const KategoriChips = ({ kategoriMap, onSelect, selectedKategori }) => (
-//  <Space wrap>
-//      {Object.entries(kategoriMap).map(([key, value]) => (
-//          <Tag.CheckableTag
-//              key={key}
-//              checked={selectedKategori.includes(key)}
-//              onChange={() => onSelect('selectedKategori', key)}
-//              style={chipStyle}
-//          >
-//              {value}
-//          </Tag.CheckableTag>
-//      ))}
-//  </Space>
-// );
 export default RekapitulasiCard;
+const styles = {
+    pageContainer: {
+        padding: '16px', // Agak lebih rapat dari default 24px
+        backgroundColor: '#f5f7fa',
+        minHeight: '100vh'
+    },
+    card: {
+        borderRadius: 4, // Khas Kantip
+        border: 'none',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', // Shadow tipis
+        background: '#fff',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden', // Supaya header radius ngikut
+        height: '100%'
+    },
+    headerCompact: {
+        padding: '12px 16px', // Padding header khas Kantip
+        borderBottom: '1px solid #f0f0f0',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: '#fff'
+    },
+    headerTitle: {
+        fontSize: 14,
+        fontWeight: 600,
+        margin: 0,
+        color: '#262626'
+    },
+    iconBox: (color, bg) => ({
+        background: bg,
+        padding: 6,
+        borderRadius: 4,
+        color: color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 10,
+        fontSize: 14
+    }),
+    inputRadius: {
+        borderRadius: 4
+    }
+};

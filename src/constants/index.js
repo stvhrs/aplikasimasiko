@@ -14,7 +14,7 @@ export const KategoriPemasukan = {
 export const KategoriPengeluaran = {
 
   komisi: "Komisi",
-
+ retur_buku: "Retur Buku",
   gaji_produksi: "Gaji Karyawan",
   operasional: "Operasional",
 
