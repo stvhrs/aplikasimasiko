@@ -17,7 +17,6 @@ import {
 import dayjs from 'dayjs';
 
 // --- IMPORT HOOKS BARU (ANTI-RELOAD / LAZY LOAD) ---
-// Data buku & pelanggan hanya akan diload (start stream) saat komponen ini dimount
 import { useBukuStream, usePelangganStream } from '../../../hooks/useFirebaseData'; 
 
 const { Option } = Select;
@@ -44,8 +43,7 @@ export default function TransaksiJualForm({
     initialTx = null,
     onSuccess,
 }) {
-    // --- LAZY LOAD DATA MASTER (DIPINDAHKAN KE SINI) ---
-    // Stream akan dimulai saat Modal (Form) ini dibuka
+    // --- LAZY LOAD DATA MASTER ---
     const { bukuList, loadingBuku } = useBukuStream();
     const { pelangganList, loadingPelanggan } = usePelangganStream();
     
@@ -58,7 +56,6 @@ export default function TransaksiJualForm({
 
     // ===== Prefill saat EDIT =====
     useEffect(() => {
-        // Pastikan modal terbuka DAN data master sudah siap
         if (open && !loadingDependencies) {
             if (mode === 'edit' && initialTx) {
                 console.log("Memuat data form untuk edit:", initialTx);
@@ -289,7 +286,9 @@ export default function TransaksiJualForm({
                     updates[`historiStok/${logKey}`] = {
                         bukuId: buku.id, judul: buku.judul, kode_buku: buku.kode_buku, penerbit: buku.penerbit || '-',
                         perubahan: -Number(item.jumlah), stokSebelum: buku.stok, stokSesudah: stokBaru,
-                        keterangan: `Penjualan ${data.nomorInvoice}`, refId: txKey, timestamp: serverTimestamp()
+                        // [UPDATE] Tambah nama pelanggan
+                        keterangan: `Penjualan ${data.nomorInvoice} - ${pelanggan.nama}`, 
+                        refId: txKey, timestamp: serverTimestamp()
                     };
                 }
 
@@ -331,7 +330,9 @@ export default function TransaksiJualForm({
                         updates[`historiStok/${logKey}`] = {
                             bukuId: buku.id, judul: buku.judul, kode_buku: buku.kode_buku, penerbit: buku.penerbit,
                             perubahan: delta, stokSebelum: buku.stok, stokSesudah: stokBaru,
-                            keterangan: `Revisi Invoice ${data.nomorInvoice}`, refId: editTxKey, timestamp: serverTimestamp()
+                            // [UPDATE] Tambah nama pelanggan
+                            keterangan: `Revisi Invoice ${data.nomorInvoice} - ${pelanggan.nama}`, 
+                            refId: editTxKey, timestamp: serverTimestamp()
                         };
                     }
                 }
@@ -359,6 +360,9 @@ export default function TransaksiJualForm({
             const updates = {};
             updates[`transaksiJualBuku/${txKey}`] = null; // Hapus transaksi
 
+            // Ambil nama pelanggan untuk log
+            const namaPelanggan = initialTx.namaPelanggan || 'Tanpa Nama';
+
             // Kembalikan Stok
             for (const item of (initialTx.items || [])) {
                 const buku = bukuList.find(b => b.id === item.idBuku);
@@ -371,7 +375,9 @@ export default function TransaksiJualForm({
                     updates[`historiStok/${logKey}`] = {
                         bukuId: buku.id, judul: buku.judul, kode_buku: buku.kode_buku, penerbit: buku.penerbit,
                         perubahan: Number(item.jumlah), stokSebelum: buku.stok, stokSesudah: stokBaru,
-                        keterangan: `Hapus Invoice ${initialTx.nomorInvoice}`, refId: txKey, timestamp: serverTimestamp()
+                        // [UPDATE] Tambah nama pelanggan
+                        keterangan: `Hapus Invoice ${initialTx.nomorInvoice} - ${namaPelanggan}`, 
+                        refId: txKey, timestamp: serverTimestamp()
                     };
                 }
             }
@@ -445,10 +451,27 @@ export default function TransaksiJualForm({
                                                 <Row gutter={12}>
                                                     <Col span={24}>
                                                         <Form.Item {...restField} name={[name, 'idBuku']} label={`Buku #${index+1}`} rules={[{ required: true }]}>
-                                                            <Select showSearch placeholder="Pilih Buku" onChange={(val) => handleBukuChange(index, val)} filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())} optionLabelProp="label" disabled={!selectedPelanggan}>
+                                                            <Select 
+                                                                showSearch 
+                                                                placeholder="Pilih Buku (Cari berdasarkan Judul, Penerbit, atau Kode Buku)" 
+                                                                onChange={(val) => handleBukuChange(index, val)} 
+                                                                // filterOption mencakup 'label' yang kini berisi kode_buku
+                                                                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())} 
+                                                                optionLabelProp="label" 
+                                                                disabled={!selectedPelanggan}
+                                                            >
                                                                 {sortedBuku.map(b => (
-                                                                    <Option key={b.id} value={b.id} label={`${b.judul} (${b.penerbit})`}>
-                                                                        <Text strong>{b.judul}</Text><br/><Text type="secondary" style={{fontSize:12}}>({b.penerbit}) | Stok: {b.stok}</Text>
+                                                                    <Option 
+                                                                        key={b.id} 
+                                                                        value={b.id} 
+                                                                        // [UPDATE] Menyertakan kode_buku di label untuk pencarian
+                                                                        label={`${b.kode_buku} | ${b.judul} (${b.penerbit})`}
+                                                                    >
+                                                                        <Text strong>{b.judul}</Text>
+                                                                        <br/>
+                                                                        <Text type="secondary" style={{fontSize:12}}>
+                                                                            Kode: **{b.kode_buku}** | ({b.penerbit}) | Stok: {b.stok}
+                                                                        </Text>
                                                                     </Option>
                                                                 ))}
                                                             </Select>

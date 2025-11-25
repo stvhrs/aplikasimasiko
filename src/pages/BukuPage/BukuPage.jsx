@@ -32,7 +32,6 @@ const BukuPage = () => {
     const screens = Grid.useBreakpoint();
     
     // --- 1. STATE TAB CONTROL (KEEP ALIVE) ---
-    // Agar saat pindah tab (di halaman ini), data tidak reload
     const [activeTab, setActiveTab] = useState('1');
     const [hasTab2Loaded, setHasTab2Loaded] = useState(false);
 
@@ -115,7 +114,13 @@ const BukuPage = () => {
     const mapelFilters = useMemo(() => generateFilters(bukuList, 'mapel'), [bukuList]);
     const kelasFilters = useMemo(() => generateFilters(bukuList, 'kelas'), [bukuList]);
     const tahunTerbitFilters = useMemo(() => generateFilters(bukuList, 'tahunTerbit'), [bukuList]);
-    const peruntukanFilters = useMemo(() => generateFilters(bukuList, 'peruntukan'), [bukuList]);
+    
+    // Filters peruntukan disaring hanya 'Guru' dan 'Siswa'
+  // Filters peruntukan disaring hanya 'Guru' dan 'Siswa'
+const peruntukanFilters = useMemo(() => {
+    const filters = generateFilters(bukuList, 'peruntukan');
+    return filters.filter(f => f.value === 'Guru' || f.value === 'Siswa');
+}, [bukuList]);
     const penerbitFilters = useMemo(() => generateFilters(bukuList, 'penerbit'), [bukuList]);
     const tipeBukuFilters = useMemo(() => generateFilters(bukuList, 'tipe_buku'), [bukuList]);
 
@@ -147,6 +152,8 @@ const BukuPage = () => {
     // Handlers
     const handleTableChange = useCallback((paginationConfig, filters) => {
         setPagination(paginationConfig);
+        // Penting: Ant Design akan mengirimkan `filters` dari header kolom ke sini.
+        // Kita perlu menyimpannya di state `columnFilters`
         setColumnFilters(filters);
     }, []);
 
@@ -197,16 +204,31 @@ const BukuPage = () => {
         { title: 'Kode Buku', dataIndex: 'kode_buku', key: 'kode_buku', width: 130, sorter: (a, b) => (Number(a.kode_buku) || 0) - (Number(b.kode_buku) || 0) },
         { title: 'Judul Buku', dataIndex: 'judul', key: 'judul', width: 300, sorter: (a, b) => (a.judul || '').localeCompare(b.judul || '') },
         { title: 'Penerbit', dataIndex: 'penerbit', key: 'penerbit', width: 150, filters: penerbitFilters, filteredValue: columnFilters.penerbit || null, onFilter: (v, r) => r.penerbit === v, sorter: (a, b) => (a.penerbit || '').localeCompare(b.penerbit || '') },
+        
+        // Kolom Peruntukan dengan filter
+        { 
+            title: 'Peruntukan', 
+            dataIndex: 'peruntukan', 
+            key: 'peruntukan', 
+            width: 120, 
+            align: 'center', 
+            // Properti 'filters' Ant Design yang membuat dropdown filter di header
+            filters: peruntukanFilters, 
+            // Properti 'filteredValue' Ant Design untuk mengontrol filter aktif
+            filteredValue: columnFilters.peruntukan || null, 
+            // Properti 'onFilter' yang digunakan Ant Design untuk memfilter baris
+            onFilter: (value, record) => record.peruntukan === value, 
+        },
+
         { title: 'Stok', dataIndex: 'stok', key: 'stok', align: 'right', width: 100, render: numberFormatter, sorter: (a, b) => (Number(a.stok) || 0) - (Number(b.stok) || 0) },
         { title: 'Hrg. Z1', dataIndex: 'hargaJual', key: 'hargaJual', align: 'right', width: 150, render: (v) => v ? `Rp ${numberFormatter(v)}` : '-', sorter: (a, b) => (Number(a.hargaJual) || 0) - (Number(b.hargaJual) || 0) },
         { title: 'Kelas', dataIndex: 'kelas', key: 'kelas', width: 100, align: 'center', filters: kelasFilters, filteredValue: columnFilters.kelas || null, sorter: (a, b) => String(a.kelas || '').localeCompare(String(b.kelas || ''), undefined, { numeric: true }) },
         { title: 'Tahun', dataIndex: 'tahunTerbit', key: 'tahunTerbit', width: 100, align: 'center', render: (v) => v || '-', filters: tahunTerbitFilters, filteredValue: columnFilters.tahunTerbit || null, sorter: (a, b) => (Number(a.tahunTerbit) || 0) - (Number(b.tahunTerbit) || 0) },
         { title: 'Aksi', key: 'aksi', align: 'center', width: 100, fixed: screens.md ? 'right' : false, render: (_, record) => (<BukuActionButtons record={record} onEdit={handleEdit} onRestock={handleTambahStok} />) },
-    ], [kelasFilters, tahunTerbitFilters, penerbitFilters, columnFilters, screens.md, handleEdit, handleTambahStok]);
+    ], [kelasFilters, tahunTerbitFilters, penerbitFilters, peruntukanFilters, columnFilters, screens.md, handleEdit, handleTambahStok]);
 
+    // Perhitungan lebar scroll X
     const tableScrollX = useMemo(() => columns.reduce((acc, col) => acc + (col.width || 150), 0), [columns]);
-
-   // ... import dan kode sebelumnya tetap sama ...
 
     return (
         <Content style={{ padding: screens.xs ? '12px' : '24px' }}>
@@ -218,22 +240,23 @@ const BukuPage = () => {
             {/* TAB 1: MANAJEMEN BUKU */}
             <div style={{ display: activeTab === '1' ? 'block' : 'none' }}>
                 <Spin spinning={initialLoading || isFiltering} tip="Memuat data...">
-                    <Card bodyStyle={{ paddingBottom: 12 }}> {/* Kurangi padding bawah agar rekap lebih naik */}
+                    <Card bodyStyle={{ paddingBottom: 12 }}>
                         
-                        {/* --- BAGIAN HEADER & SEARCH (TETAP SAMA) --- */}
+                        {/* --- BAGIAN HEADER & SEARCH --- */}
                         <Row justify="space-between" align="middle" gutter={[16, 16]} style={{ marginBottom: '24px' }}>
                             <Col lg={6} md={8} sm={24} xs={24}><Title level={5} style={{ margin: 0 }}> Data Buku</Title></Col>
                             <Col lg={18} md={16} sm={24} xs={24}>
                                 <Space direction={screens.xs ? 'vertical' : 'horizontal'} style={{ width: '100%', justifyContent: 'flex-end' }}>
                                     <Input.Search placeholder="Cari Judul, Kode, Penerbit..." value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear style={{ width: screens.xs ? '100%' : 250 }} enterButton />
                                     <Space wrap>
-<Button 
-    onClick={handleGenerateAndShowPdf} 
-    loading={isGeneratingPdf} 
-    icon={<PrinterOutlined />}
->
-    Download
-</Button>                                        <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>{screens.xs ? 'Restock' : 'Restock Borongan'}</Button>
+                                        <Button 
+                                            onClick={handleGenerateAndShowPdf} 
+                                            loading={isGeneratingPdf} 
+                                            icon={<PrinterOutlined />}
+                                        >
+                                            Download
+                                        </Button>
+                                        <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>{screens.xs ? 'Restock' : 'Restock Borongan'}</Button>
                                         <Button type="primary" icon={<PlusOutlined />} onClick={handleTambah} disabled={initialLoading}>Tambah Buku</Button>
                                     </Space>
                                 </Space>
@@ -241,7 +264,6 @@ const BukuPage = () => {
                         </Row>
 
                         {/* --- TABLE COMPONENT --- */}
-                        {/* Note: summaryData dihapus dari props table karena akan ditaruh di bawah */}
                         <BukuTableComponent 
                             columns={columns} 
                             dataSource={dataForTable} 
@@ -260,7 +282,7 @@ const BukuPage = () => {
                                 background: '#fafafa', 
                                 border: '1px solid #f0f0f0', 
                                 borderRadius: 6,
-                                fontSize: '12px', // Font diperkecil
+                                fontSize: '12px',
                                 color: 'rgba(0, 0, 0, 0.65)'
                             }}>
                                 <Row gutter={[24, 8]} align="middle">
@@ -271,7 +293,6 @@ const BukuPage = () => {
                                         </Typography.Text>
                                     </Col>
                                     
-                                    {/* Divider vertikal manual */}
                                     <div style={{ width: 1, height: 14, background: '#d9d9d9', alignSelf: 'center' }} />
 
                                     <Col>
@@ -317,7 +338,6 @@ const BukuPage = () => {
             {isBulkRestockModalOpen && (<BulkRestockModal open={isBulkRestockModalOpen} onClose={handleCloseBulkRestockModal} bukuList={bukuList} />)}
         </Content>
     );
-// ...
 };
 
 export default BukuPage;

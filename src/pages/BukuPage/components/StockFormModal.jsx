@@ -135,7 +135,7 @@ const StokFormModal = ({ open, onCancel, buku }) => {
             title: 'Perubahan',
             dataIndex: 'perubahan',
             key: 'perubahan',
-            width: 140,
+            width: 100,
             align: 'right',
             render: (val) => {
                 const num = Number(val);
@@ -179,7 +179,7 @@ const StokFormModal = ({ open, onCancel, buku }) => {
             onCancel={onCancel}
             footer={null}
             destroyOnClose
-            width={1300}
+            width={1500}
         >
             <Spin spinning={loading}>
                 <Row gutter={24}>
