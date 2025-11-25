@@ -200,299 +200,320 @@ const TransaksiForm = ({ open, onCancel, initialValues }) => {
     // ==========================================
     // LOGIC SIMPAN (UPDATE INVOICE ITEMS)
     // ==========================================
-    const saveTransaction = async (values) => {
-        setIsSaving(true);
-        message.loading({ content: 'Menyimpan...', key: 'saving' });
-        
-        const { bukti, ...dataLain } = values;
-        const buktiFile = (bukti && bukti.length > 0 && bukti[0].originFileObj) ? bukti[0].originFileObj : null;
-        let buktiUrl = initialValues?.buktiUrl || null;
+  // ==========================================
+// FILE: src/pages/transaksi-jual/components/TransaksiForm.jsx
+// ==========================================
+// ... (Import dan State definitions tetap sama)
 
-        try {
-            if (buktiFile) {
-                const safeKeterangan = (dataLain.keterangan || 'bukti').substring(0, 10).replace(/[^a-z0-9]/gi, '_');
-                const fileRef = storageRef(storage, `bukti_mutasi/${safeKeterangan}-${uuidv4()}`);
-                await uploadBytes(fileRef, buktiFile);
-                buktiUrl = await getDownloadURL(fileRef);
-            }
+// ...
+// LOGIC SIMPAN (UPDATE INVOICE ITEMS)
+// ==========================================
+const saveTransaction = async (values) => {
+    setIsSaving(true);
+    message.loading({ content: 'Menyimpan...', key: 'saving' });
+    
+    const { bukti, ...dataLain } = values;
+    const buktiFile = (bukti && bukti.length > 0 && bukti[0].originFileObj) ? bukti[0].originFileObj : null;
+    let buktiUrl = initialValues?.buktiUrl || null;
 
-            const updates = {};
-            const mutasiId = initialValues?.id || push(ref(db, 'mutasi')).key;
-            const timestampNow = dayjs(dataLain.tanggal).valueOf();
-
-            // A. JIKA KATEGORI RETUR BUKU
-            if (dataLain.kategori === 'Retur Buku') {
-                const invoiceRefPath = `transaksiJualBuku/${dataLain.idTransaksi}`;
-                const invoiceSnapshot = await get(ref(db, invoiceRefPath));
-                if (!invoiceSnapshot.exists()) throw new Error("Invoice tidak ditemukan!");
-                
-                const originalInvoice = invoiceSnapshot.val();
-                
-                // 1. Update Items di Invoice (Kurangi Qty)
-                let newTotalTagihan = 0;
-                let newTotalQty = 0;
-                
-                const updatedItems = (originalInvoice.items || []).map(item => {
-                    const returInfo = returItems.find(r => r.idBuku === item.idBuku);
-                    if (returInfo && returInfo.qtyRetur > 0) {
-                        // Kurangi jumlah item di invoice
-                        return { ...item, jumlah: Number(item.jumlah) - Number(returInfo.qtyRetur) };
-                    }
-                    return item;
-                });
-
-                // 2. Hitung Ulang Total Tagihan Invoice
-                updatedItems.forEach(item => {
-                    const qty = Number(item.jumlah);
-                    const harga = Number(item.hargaSatuan);
-                    const diskon = Number(item.diskonPersen || 0);
-                    const subtotal = qty * harga * (1 - diskon / 100);
-                    
-                    newTotalTagihan += subtotal;
-                    newTotalQty += qty;
-                });
-
-                const diskonLain = Number(originalInvoice.diskonLain || 0);
-                const biayaTentu = Number(originalInvoice.biayaTentu || 0);
-                const finalTotalTagihan = newTotalTagihan - diskonLain + biayaTentu;
-                
-                // 3. Cek Status Pembayaran
-                const existingPaid = Number(originalInvoice.jumlahTerbayar || 0);
-                const newStatus = existingPaid >= finalTotalTagihan ? 'Lunas' : 'Belum';
-
-                // Masukkan update invoice ke objek updates
-                updates[`${invoiceRefPath}/items`] = updatedItems;
-                updates[`${invoiceRefPath}/totalTagihan`] = finalTotalTagihan;
-                updates[`${invoiceRefPath}/totalQty`] = newTotalQty;
-                updates[`${invoiceRefPath}/statusPembayaran`] = newStatus;
-                updates[`${invoiceRefPath}/updatedAt`] = { ".sv": "timestamp" };
-
-                // 4. Update Stok & Log Histori
-                for (const itemRetur of returItems) {
-                    if (itemRetur.qtyRetur > 0) {
-                        const bukuSnapshot = await get(ref(db, `buku/${itemRetur.idBuku}`));
-                        if (bukuSnapshot.exists()) {
-                            const bukuData = bukuSnapshot.val();
-                            const stokSekarang = Number(bukuData.stok || 0);
-                            const stokBaru = stokSekarang + itemRetur.qtyRetur; // Tambah stok
-
-                            updates[`buku/${itemRetur.idBuku}/stok`] = stokBaru;
-                            
-                            const logKey = push(ref(db, 'historiStok')).key;
-                            updates[`historiStok/${logKey}`] = {
-                                bukuId: itemRetur.idBuku,
-                                judul: bukuData.judul,
-                                perubahan: itemRetur.qtyRetur,
-                                stokSebelum: stokSekarang,
-                                stokSesudah: stokBaru,
-                                keterangan: `Retur Invoice ${originalInvoice.nomorInvoice} ${originalInvoice.namaPelanggan}`,
-                                refId: dataLain.idTransaksi,
-                                timestamp: timestampNow // Penting untuk delete nanti
-                            };
-                        }
-                    }
-                }
-
-                // 5. Simpan Data Mutasi
-                const refundAmount = Number(dataLain.jumlah);
-                updates[`mutasi/${mutasiId}`] = {
-                    idTransaksi: dataLain.idTransaksi,
-                    tipeTransaksi: "Penjualan Buku",
-                    jumlahKeluar: refundAmount,
-                    tanggal: timestampNow,
-                    tipeMutasi: 'Retur Buku',
-                    keterangan: dataLain.keterangan,
-                    buktiUrl,
-                    tipe: TipeTransaksi.pengeluaran,
-                    kategori: 'Retur Buku',
-                    jumlah: -Math.abs(refundAmount),
-                    nilaiBarangRetur: summaryRetur.totalRetur,
-                    itemsReturRingkas: returItems.filter(i=>i.qtyRetur>0).map(i=> `${i.judulBuku} (x${i.qtyRetur})`).join(', ')
-                };
-
-            } 
-            // B. JIKA PEMBAYARAN BIASA
-            else if (dataLain.idTransaksi) {
-                const newPaymentAmount = Number(dataLain.jumlah);
-                const mutasiData = {
-                    idTransaksi: dataLain.idTransaksi,
-                    tipeTransaksi: "Penjualan Buku",
-                    jumlahBayar: newPaymentAmount,
-                    tanggalBayar: timestampNow,
-                    tipeMutasi: dataLain.kategori,
-                    keterangan: dataLain.keterangan,
-                    buktiUrl,
-                    tipe: TipeTransaksi.pemasukan,
-                    kategori: dataLain.kategori,
-                    jumlah: newPaymentAmount,
-                    tanggal: timestampNow
-                };
-                updates[`mutasi/${mutasiId}`] = mutasiData;
-
-                const invoiceRef = ref(db, `transaksiJualBuku/${dataLain.idTransaksi}`);
-                const invoiceSnapshot = await get(invoiceRef);
-                
-                if (invoiceSnapshot.exists()) {
-                    const invoiceData = invoiceSnapshot.val();
-                    let currentPaid = (invoiceData.jumlahTerbayar || 0) + newPaymentAmount;
-                    let currentHistory = invoiceData.riwayatPembayaran || {};
-                    currentHistory[mutasiId] = {
-                        tanggal: timestampNow,
-                        jumlah: newPaymentAmount,
-                        mutasiId: mutasiId,
-                        keterangan: mutasiData.keterangan
-                    };
-
-                    let newStatus = currentPaid >= invoiceData.totalTagihan ? 'Lunas' : 'Belum';
-                    
-                    updates[`transaksiJualBuku/${dataLain.idTransaksi}/jumlahTerbayar`] = currentPaid;
-                    updates[`transaksiJualBuku/${dataLain.idTransaksi}/riwayatPembayaran`] = currentHistory;
-                    updates[`transaksiJualBuku/${dataLain.idTransaksi}/statusPembayaran`] = newStatus;
-                }
-            } 
-            // C. TRANSAKSI UMUM
-            else {
-                const jumlah = dataLain.tipe === TipeTransaksi.pengeluaran ? -Math.abs(Number(dataLain.jumlah)) : Number(dataLain.jumlah);
-                updates[`mutasi/${mutasiId}`] = {
-                    jumlah, kategori: dataLain.kategori, keterangan: dataLain.keterangan,
-                    tanggal: timestampNow, tipe: dataLain.tipe, buktiUrl, tipeMutasi: dataLain.kategori
-                };
-            }
-
-            await update(ref(db), updates);
-            message.success({ content: 'Berhasil!', key: 'saving' });
-            onCancel();
-        } catch (error) {
-            console.error(error);
-            message.error({ content: `Gagal: ${error.message}`, key: 'saving' });
-        } finally {
-            setIsSaving(false);
+    try {
+        if (buktiFile) {
+            const safeKeterangan = (dataLain.keterangan || 'bukti').substring(0, 10).replace(/[^a-z0-9]/gi, '_');
+            const fileRef = storageRef(storage, `bukti_mutasi/${safeKeterangan}-${uuidv4()}`);
+            await uploadBytes(fileRef, buktiFile);
+            buktiUrl = await getDownloadURL(fileRef);
         }
-    };
 
+        const updates = {};
+        const mutasiId = initialValues?.id || push(ref(db, 'mutasi')).key;
+        const timestampNow = dayjs(dataLain.tanggal).valueOf();
+
+        // A. JIKA KATEGORI RETUR BUKU
+        if (dataLain.kategori === 'Retur Buku') {
+            const invoiceRefPath = `transaksiJualBuku/${dataLain.idTransaksi}`;
+            const invoiceSnapshot = await get(ref(db, invoiceRefPath));
+            if (!invoiceSnapshot.exists()) throw new Error("Invoice tidak ditemukan!");
+            
+            const originalInvoice = invoiceSnapshot.val();
+            
+            // 1. Update Items di Invoice (Kurangi Qty)
+            let newTotalTagihan = 0;
+            let newTotalQty = 0;
+            
+            const updatedItems = (originalInvoice.items || []).map(item => {
+                const returInfo = returItems.find(r => r.idBuku === item.idBuku);
+                if (returInfo && returInfo.qtyRetur > 0) {
+                    // Kurangi jumlah item di invoice
+                    return { ...item, jumlah: Number(item.jumlah) - Number(returInfo.qtyRetur) };
+                }
+                return item;
+            });
+
+            // 2. Hitung Ulang Total Tagihan Invoice
+            updatedItems.forEach(item => {
+                const qty = Number(item.jumlah);
+                const harga = Number(item.hargaSatuan);
+                const diskon = Number(item.diskonPersen || 0);
+                const subtotal = qty * harga * (1 - diskon / 100);
+                
+                newTotalTagihan += subtotal;
+                newTotalQty += qty;
+            });
+
+            const diskonLain = Number(originalInvoice.diskonLain || 0);
+            const biayaTentu = Number(originalInvoice.biayaTentu || 0);
+            const finalTotalTagihan = newTotalTagihan - diskonLain + biayaTentu;
+            
+            // 3. Cek Status Pembayaran
+            const existingPaid = Number(originalInvoice.jumlahTerbayar || 0);
+            // Catatan: Jika tagihan baru lebih kecil dari yang sudah dibayar, status menjadi Lunas
+            const newStatus = existingPaid >= finalTotalTagihan ? 'Lunas' : 'Belum'; 
+
+            // Masukkan update invoice ke objek updates
+            updates[`${invoiceRefPath}/items`] = updatedItems;
+            updates[`${invoiceRefPath}/totalTagihan`] = finalTotalTagihan;
+            updates[`${invoiceRefPath}/totalQty`] = newTotalQty;
+            updates[`${invoiceRefPath}/statusPembayaran`] = newStatus;
+            updates[`${invoiceRefPath}/updatedAt`] = { ".sv": "timestamp" };
+
+            // 4. Update Stok & Log Histori
+            for (const itemRetur of returItems) {
+                if (itemRetur.qtyRetur > 0) {
+                    const bukuSnapshot = await get(ref(db, `buku/${itemRetur.idBuku}`));
+                    if (bukuSnapshot.exists()) {
+                        const bukuData = bukuSnapshot.val();
+                        const stokSekarang = Number(bukuData.stok || 0);
+                        const stokBaru = stokSekarang + itemRetur.qtyRetur; // Tambah stok
+
+                        updates[`buku/${itemRetur.idBuku}/stok`] = stokBaru;
+                        // ✅ PENYESUAIAN: Update updatedAt pada buku
+                        updates[`buku/${itemRetur.idBuku}/updatedAt`] = { ".sv": "timestamp" };
+                        
+                        const logKey = push(ref(db, 'historiStok')).key;
+                        updates[`historiStok/${logKey}`] = {
+                            bukuId: itemRetur.idBuku,
+                            judul: bukuData.judul,
+                            perubahan: itemRetur.qtyRetur,
+                            stokSebelum: stokSekarang,
+                            stokSesudah: stokBaru,
+                            keterangan: `Retur Invoice ${originalInvoice.nomorInvoice} ${originalInvoice.namaPelanggan}`,
+                            refId: dataLain.idTransaksi,
+                            timestamp: timestampNow // Penting untuk delete nanti
+                        };
+                    }
+                }
+            }
+
+            // 5. Simpan Data Mutasi (Pengeluaran = Refund)
+            const refundAmount = Number(dataLain.jumlah);
+            updates[`mutasi/${mutasiId}`] = {
+                idTransaksi: dataLain.idTransaksi,
+                tipeTransaksi: "Penjualan Buku",
+                jumlahKeluar: refundAmount,
+                tanggal: timestampNow,
+                tipeMutasi: 'Retur Buku',
+                keterangan: dataLain.keterangan,
+                buktiUrl,
+                tipe: TipeTransaksi.pengeluaran,
+                kategori: 'Retur Buku',
+                jumlah: -Math.abs(refundAmount),
+                nilaiBarangRetur: summaryRetur.totalRetur,
+                itemsReturRingkas: returItems.filter(i=>i.qtyRetur>0).map(i=> `${i.judulBuku} (x${i.qtyRetur})`).join(', ')
+            };
+
+        } 
+        // B. JIKA PEMBAYARAN BIASA (Penjualan Buku)
+        else if (dataLain.idTransaksi) {
+            const newPaymentAmount = Number(dataLain.jumlah);
+            const mutasiData = {
+                idTransaksi: dataLain.idTransaksi,
+                tipeTransaksi: "Penjualan Buku",
+                jumlahBayar: newPaymentAmount,
+                tanggalBayar: timestampNow,
+                tipeMutasi: dataLain.kategori,
+                keterangan: dataLain.keterangan,
+                buktiUrl,
+                tipe: TipeTransaksi.pemasukan,
+                kategori: dataLain.kategori,
+                jumlah: newPaymentAmount,
+                tanggal: timestampNow
+            };
+            updates[`mutasi/${mutasiId}`] = mutasiData;
+
+            const invoiceRef = ref(db, `transaksiJualBuku/${dataLain.idTransaksi}`);
+            const invoiceSnapshot = await get(invoiceRef);
+            
+            if (invoiceSnapshot.exists()) {
+                const invoiceData = invoiceSnapshot.val();
+                let currentPaid = (invoiceData.jumlahTerbayar || 0) + newPaymentAmount;
+                let currentHistory = invoiceData.riwayatPembayaran || {};
+                currentHistory[mutasiId] = {
+                    tanggal: timestampNow,
+                    jumlah: newPaymentAmount,
+                    mutasiId: mutasiId,
+                    keterangan: mutasiData.keterangan
+                };
+
+                let newStatus = currentPaid >= invoiceData.totalTagihan ? 'Lunas' : 'Belum';
+                
+                updates[`transaksiJualBuku/${dataLain.idTransaksi}/jumlahTerbayar`] = currentPaid;
+                updates[`transaksiJualBuku/${dataLain.idTransaksi}/riwayatPembayaran`] = currentHistory;
+                updates[`transaksiJualBuku/${dataLain.idTransaksi}/statusPembayaran`] = newStatus;
+            }
+        } 
+        // C. TRANSAKSI UMUM
+        else {
+            const jumlah = dataLain.tipe === TipeTransaksi.pengeluaran ? -Math.abs(Number(dataLain.jumlah)) : Number(dataLain.jumlah);
+            updates[`mutasi/${mutasiId}`] = {
+                jumlah, kategori: dataLain.kategori, keterangan: dataLain.keterangan,
+                tanggal: timestampNow, tipe: dataLain.tipe, buktiUrl, tipeMutasi: dataLain.kategori
+            };
+        }
+
+        await update(ref(db), updates);
+        message.success({ content: 'Berhasil!', key: 'saving' });
+        onCancel();
+    } catch (error) {
+        console.error(error);
+        message.error({ content: `Gagal: ${error.message}`, key: 'saving' });
+    } finally {
+        setIsSaving(false);
+    }
+};
+
+// ==========================================
+// LOGIC DELETE (RESTORE INVOICE ITEMS)
+// ==========================================
+const handleDelete = () => {
+    if (!initialValues || !initialValues.id) {
+        message.error("Gagal: ID Transaksi tidak ditemukan.");
+        return;
+    }
+
+    modal.confirm({
+        title: 'Hapus Transaksi?',
+        icon: <ExclamationCircleOutlined />,
+        content: 'Jika ini Retur, item akan dikembalikan ke Invoice dan Stok akan ditarik kembali. Yakin?',
+        okText: 'Ya, Hapus Permanen',
+        okType: 'danger',
+        cancelText: 'Batal',
+        onOk: async () => {
+            setIsSaving(true);
+            try {
+                const mutasiId = initialValues.id;
+                const invoiceId = initialValues.idTransaksi;
+                const mutasiTimestamp = Number(initialValues.tanggal);
+
+                const updates = {};
+                updates[`mutasi/${mutasiId}`] = null;
+
+                // 1. ROLLBACK RETUR BUKU
+                if (initialValues.kategori === 'Retur Buku' && invoiceId) {
+                    
+                    // Cari log stok untuk mengetahui apa yg diretur dulu
+                    const historyQuery = query(ref(db, 'historiStok'), orderByChild('timestamp'), equalTo(mutasiTimestamp));
+                    const historySnap = await get(historyQuery);
+                    const invoiceRef = ref(db, `transaksiJualBuku/${invoiceId}`);
+                    const invoiceSnap = await get(invoiceRef);
+
+                    if (invoiceSnap.exists() && historySnap.exists()) {
+                        const invData = invoiceSnap.val();
+                        const historyData = historySnap.val();
+                        
+                        // A. Pulihkan Items Invoice
+                        let updatedItems = [...(invData.items || [])];
+                        let restorationLog = [];
+
+                        Object.keys(historyData).forEach(histKey => {
+                            const log = historyData[histKey];
+                            const bukuId = log.bukuId;
+                            const qtyYangDuluDiretur = Number(log.perubahan); // Angka positif
+
+                            restorationLog.push({ bukuId, qty: qtyYangDuluDiretur });
+
+                            const itemIndex = updatedItems.findIndex(i => i.idBuku === bukuId);
+                            if (itemIndex !== -1) {
+                                // Tambahkan qty kembali ke invoice
+                                updatedItems[itemIndex].jumlah = Number(updatedItems[itemIndex].jumlah) + qtyYangDuluDiretur;
+                            }
+                        });
+
+                        // B. Hitung Ulang Total Tagihan
+                        let recountTotalTagihan = 0;
+                        let recountTotalQty = 0;
+                        updatedItems.forEach(item => {
+                            const q = Number(item.jumlah);
+                            const h = Number(item.hargaSatuan);
+                            const d = Number(item.diskonPersen || 0);
+                            recountTotalTagihan += (q * h * (1 - d / 100));
+                            recountTotalQty += q;
+                        });
+                        recountTotalTagihan = recountTotalTagihan - (Number(invData.diskonLain || 0)) + (Number(invData.biayaTentu || 0));
+
+                        // C. Status Pembayaran
+                        const terbayar = Number(invData.jumlahTerbayar || 0);
+                        const newStatus = terbayar >= recountTotalTagihan ? 'Lunas' : 'Belum';
+
+                        updates[`transaksiJualBuku/${invoiceId}/items`] = updatedItems;
+                        updates[`transaksiJualBuku/${invoiceId}/totalTagihan`] = recountTotalTagihan;
+                        updates[`transaksiJualBuku/${invoiceId}/totalQty`] = recountTotalQty;
+                        updates[`transaksiJualBuku/${invoiceId}/statusPembayaran`] = newStatus;
+                        updates[`transaksiJualBuku/${invoiceId}/updatedAt`] = { ".sv": "timestamp" }; // Update invoice saat rollback
+
+                        // D. Tarik Stok Kembali (Kurangi Stok) & Hapus Log
+                        for (const rec of restorationLog) {
+                            const bukuSnap = await get(ref(db, `buku/${rec.bukuId}`));
+                            if (bukuSnap.exists()) {
+                                const stokSekarang = Number(bukuSnap.val().stok || 0);
+                                updates[`buku/${rec.bukuId}/stok`] = stokSekarang - rec.qty;
+                                // ✅ PENYESUAIAN: Update updatedAt pada buku saat stok ditarik kembali
+                                updates[`buku/${rec.bukuId}/updatedAt`] = { ".sv": "timestamp" };
+                            }
+                        }
+                        Object.keys(historyData).forEach(k => updates[`historiStok/${k}`] = null);
+                    }
+                }
+
+                // 2. ROLLBACK PEMBAYARAN BIASA
+                else if (invoiceId) {
+                    const invoiceRef = ref(db, `transaksiJualBuku/${invoiceId}`);
+                    const invoiceSnap = await get(invoiceRef);
+                    if (invoiceSnap.exists()) {
+                        const invData = invoiceSnap.val();
+                        const nominalBayarDihapus = Math.abs(initialValues.jumlah || 0);
+                        const currentPaid = invData.jumlahTerbayar || 0;
+
+                        const newPaid = currentPaid - nominalBayarDihapus;
+                        const finalPaid = newPaid < 0 ? 0 : newPaid;
+                        const newStatus = finalPaid >= (invData.totalTagihan||0) ? 'Lunas' : 'Belum';
+
+                        updates[`transaksiJualBuku/${invoiceId}/jumlahTerbayar`] = finalPaid;
+                        updates[`transaksiJualBuku/${invoiceId}/statusPembayaran`] = newStatus;
+                        updates[`transaksiJualBuku/${invoiceId}/riwayatPembayaran/${mutasiId}`] = null;
+                        updates[`transaksiJualBuku/${invoiceId}/updatedAt`] = { ".sv": "timestamp" }; // Update invoice saat rollback
+                    }
+                }
+
+                await update(ref(db), updates);
+                message.success('Transaksi dihapus & data dipulihkan.');
+                onCancel();
+            } catch (error) {
+                console.error("Delete Error:", error);
+                message.error(`Gagal menghapus: ${error.message}`);
+            } finally {
+                setIsSaving(false);
+            }
+        }
+    });
+};
+
+// ... (return modal component tetap sama)
+// ...
 
     // ==========================================
     // LOGIC DELETE (RESTORE INVOICE ITEMS)
     // ==========================================
-    const handleDelete = () => {
-        if (!initialValues || !initialValues.id) {
-            message.error("Gagal: ID Transaksi tidak ditemukan.");
-            return;
-        }
-
-        modal.confirm({
-            title: 'Hapus Transaksi?',
-            icon: <ExclamationCircleOutlined />,
-            content: 'Jika ini Retur, item akan dikembalikan ke Invoice dan Stok akan ditarik kembali. Yakin?',
-            okText: 'Ya, Hapus Permanen',
-            okType: 'danger',
-            cancelText: 'Batal',
-            onOk: async () => {
-                setIsSaving(true);
-                try {
-                    const mutasiId = initialValues.id;
-                    const invoiceId = initialValues.idTransaksi;
-                    const mutasiTimestamp = Number(initialValues.tanggal);
-
-                    const updates = {};
-                    updates[`mutasi/${mutasiId}`] = null;
-
-                    // 1. ROLLBACK RETUR BUKU
-                    if (initialValues.kategori === 'Retur Buku' && invoiceId) {
-                        
-                        // Cari log stok untuk mengetahui apa yg diretur dulu
-                        const historyQuery = query(ref(db, 'historiStok'), orderByChild('timestamp'), equalTo(mutasiTimestamp));
-                        const historySnap = await get(historyQuery);
-                        const invoiceRef = ref(db, `transaksiJualBuku/${invoiceId}`);
-                        const invoiceSnap = await get(invoiceRef);
-
-                        if (invoiceSnap.exists() && historySnap.exists()) {
-                            const invData = invoiceSnap.val();
-                            const historyData = historySnap.val();
-                            
-                            // A. Pulihkan Items Invoice
-                            let updatedItems = [...(invData.items || [])];
-                            let restorationLog = [];
-
-                            Object.keys(historyData).forEach(histKey => {
-                                const log = historyData[histKey];
-                                const bukuId = log.bukuId;
-                                const qtyYangDuluDiretur = Number(log.perubahan); // Angka positif
-
-                                restorationLog.push({ bukuId, qty: qtyYangDuluDiretur });
-
-                                const itemIndex = updatedItems.findIndex(i => i.idBuku === bukuId);
-                                if (itemIndex !== -1) {
-                                    // Tambahkan qty kembali ke invoice
-                                    updatedItems[itemIndex].jumlah = Number(updatedItems[itemIndex].jumlah) + qtyYangDuluDiretur;
-                                }
-                            });
-
-                            // B. Hitung Ulang Total Tagihan
-                            let recountTotalTagihan = 0;
-                            let recountTotalQty = 0;
-                            updatedItems.forEach(item => {
-                                const q = Number(item.jumlah);
-                                const h = Number(item.hargaSatuan);
-                                const d = Number(item.diskonPersen || 0);
-                                recountTotalTagihan += (q * h * (1 - d / 100));
-                                recountTotalQty += q;
-                            });
-                            recountTotalTagihan = recountTotalTagihan - (Number(invData.diskonLain || 0)) + (Number(invData.biayaTentu || 0));
-
-                            // C. Status Pembayaran
-                            const terbayar = Number(invData.jumlahTerbayar || 0);
-                            const newStatus = terbayar >= recountTotalTagihan ? 'Lunas' : 'Belum';
-
-                            updates[`transaksiJualBuku/${invoiceId}/items`] = updatedItems;
-                            updates[`transaksiJualBuku/${invoiceId}/totalTagihan`] = recountTotalTagihan;
-                            updates[`transaksiJualBuku/${invoiceId}/totalQty`] = recountTotalQty;
-                            updates[`transaksiJualBuku/${invoiceId}/statusPembayaran`] = newStatus;
-
-                            // D. Tarik Stok Kembali (Kurangi Stok) & Hapus Log
-                            for (const rec of restorationLog) {
-                                const bukuSnap = await get(ref(db, `buku/${rec.bukuId}`));
-                                if (bukuSnap.exists()) {
-                                    const stokSekarang = Number(bukuSnap.val().stok || 0);
-                                    updates[`buku/${rec.bukuId}/stok`] = stokSekarang - rec.qty;
-                                }
-                            }
-                            Object.keys(historyData).forEach(k => updates[`historiStok/${k}`] = null);
-                        }
-                    }
-
-                    // 2. ROLLBACK PEMBAYARAN BIASA
-                    else if (invoiceId) {
-                        const invoiceRef = ref(db, `transaksiJualBuku/${invoiceId}`);
-                        const invoiceSnap = await get(invoiceRef);
-                        if (invoiceSnap.exists()) {
-                            const invData = invoiceSnap.val();
-                            const nominalBayarDihapus = Math.abs(initialValues.jumlah || 0);
-                            const currentPaid = invData.jumlahTerbayar || 0;
-
-                            const newPaid = currentPaid - nominalBayarDihapus;
-                            const finalPaid = newPaid < 0 ? 0 : newPaid;
-                            const newStatus = finalPaid >= (invData.totalTagihan||0) ? 'Lunas' : 'Belum';
-
-                            updates[`transaksiJualBuku/${invoiceId}/jumlahTerbayar`] = finalPaid;
-                            updates[`transaksiJualBuku/${invoiceId}/statusPembayaran`] = newStatus;
-                            updates[`transaksiJualBuku/${invoiceId}/riwayatPembayaran/${mutasiId}`] = null;
-                        }
-                    }
-
-                    await update(ref(db), updates);
-                    message.success('Transaksi dihapus & data dipulihkan.');
-                    onCancel();
-                } catch (error) {
-                    console.error("Delete Error:", error);
-                    message.error(`Gagal menghapus: ${error.message}`);
-                } finally {
-                    setIsSaving(false);
-                }
-            }
-        });
-    };
-
+  
     const handleOk = () => {
         form.validateFields().then(values => saveTransaction(values)).catch(info => console.log('Validate Failed:', info));
     };
