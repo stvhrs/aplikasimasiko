@@ -206,6 +206,8 @@ const BukuPage = () => {
 
     const tableScrollX = useMemo(() => columns.reduce((acc, col) => acc + (col.width || 150), 0), [columns]);
 
+   // ... import dan kode sebelumnya tetap sama ...
+
     return (
         <Content style={{ padding: screens.xs ? '12px' : '24px' }}>
             <Tabs activeKey={activeTab} onChange={setActiveTab} type="card">
@@ -216,37 +218,106 @@ const BukuPage = () => {
             {/* TAB 1: MANAJEMEN BUKU */}
             <div style={{ display: activeTab === '1' ? 'block' : 'none' }}>
                 <Spin spinning={initialLoading || isFiltering} tip="Memuat data...">
-                    <Card>
+                    <Card bodyStyle={{ paddingBottom: 12 }}> {/* Kurangi padding bawah agar rekap lebih naik */}
+                        
+                        {/* --- BAGIAN HEADER & SEARCH (TETAP SAMA) --- */}
                         <Row justify="space-between" align="middle" gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-                            <Col lg={6} md={8} sm={24} xs={24}><Title level={5} style={{ margin: 0 }}>Manajemen Data Buku</Title></Col>
+                            <Col lg={6} md={8} sm={24} xs={24}><Title level={5} style={{ margin: 0 }}> Data Buku</Title></Col>
                             <Col lg={18} md={16} sm={24} xs={24}>
                                 <Space direction={screens.xs ? 'vertical' : 'horizontal'} style={{ width: '100%', justifyContent: 'flex-end' }}>
                                     <Input.Search placeholder="Cari Judul, Kode, Penerbit..." value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear style={{ width: screens.xs ? '100%' : 250 }} enterButton />
                                     <Space wrap>
-                                        <Button onClick={handleGenerateAndShowPdf} icon={<PrinterOutlined />}>Cetak PDF</Button>
-                                        <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>{screens.xs ? 'Restock' : 'Restock Borongan'}</Button>
+<Button 
+    onClick={handleGenerateAndShowPdf} 
+    loading={isGeneratingPdf} 
+    icon={<PrinterOutlined />}
+>
+    Download
+</Button>                                        <Button icon={<ContainerOutlined />} onClick={handleOpenBulkRestockModal} disabled={initialLoading || bukuList.length === 0}>{screens.xs ? 'Restock' : 'Restock Borongan'}</Button>
                                         <Button type="primary" icon={<PlusOutlined />} onClick={handleTambah} disabled={initialLoading}>Tambah Buku</Button>
                                     </Space>
                                 </Space>
                             </Col>
                         </Row>
-                        <BukuTableComponent columns={columns} dataSource={dataForTable} loading={initialLoading || isFiltering} isCalculating={initialLoading} pagination={pagination} summaryData={summaryData} handleTableChange={handleTableChange} tableScrollX={tableScrollX} />
+
+                        {/* --- TABLE COMPONENT --- */}
+                        {/* Note: summaryData dihapus dari props table karena akan ditaruh di bawah */}
+                        <BukuTableComponent 
+                            columns={columns} 
+                            dataSource={dataForTable} 
+                            loading={initialLoading || isFiltering} 
+                            isCalculating={initialLoading} 
+                            pagination={pagination} 
+                            handleTableChange={handleTableChange} 
+                            tableScrollX={tableScrollX} 
+                        />
+
+                        {/* --- REKAP SUMMARY KECIL DI BAWAH TABEL --- */}
+                        {!initialLoading && (
+                            <div style={{ 
+                                marginTop: 16, 
+                                padding: '8px 16px', 
+                                background: '#fafafa', 
+                                border: '1px solid #f0f0f0', 
+                                borderRadius: 6,
+                                fontSize: '12px', // Font diperkecil
+                                color: 'rgba(0, 0, 0, 0.65)'
+                            }}>
+                                <Row gutter={[24, 8]} align="middle">
+                                    <Col>
+                                        <span>Total Judul: </span>
+                                        <Typography.Text strong style={{ fontSize: '13px' }}>
+                                            {numberFormatter(summaryData.totalJudul)}
+                                        </Typography.Text>
+                                    </Col>
+                                    
+                                    {/* Divider vertikal manual */}
+                                    <div style={{ width: 1, height: 14, background: '#d9d9d9', alignSelf: 'center' }} />
+
+                                    <Col>
+                                        <span>Total Stok: </span>
+                                        <Typography.Text type="success" strong style={{ fontSize: '13px' }}>
+                                            {numberFormatter(summaryData.totalStok)}
+                                        </Typography.Text>
+                                    </Col>
+
+                                    <div style={{ width: 1, height: 14, background: '#d9d9d9', alignSelf: 'center' }} />
+
+                                    <Col>
+                                        <span>Est. Aset (Bruto): </span>
+                                        <Typography.Text strong style={{ fontSize: '13px' }}>
+                                            Rp {numberFormatter(summaryData.totalAsset)}
+                                        </Typography.Text>
+                                    </Col>
+
+                                    <div style={{ width: 1, height: 14, background: '#d9d9d9', alignSelf: 'center' }} />
+
+                                    <Col>
+                                        <span>Est. Aset (Net): </span>
+                                        <Typography.Text type="warning" strong style={{ fontSize: '13px' }}>
+                                            Rp {numberFormatter(summaryData.totalAssetNet)}
+                                        </Typography.Text>
+                                    </Col>
+                                </Row>
+                            </div>
+                        )}
+
                     </Card>
                 </Spin>
             </div>
 
-            {/* TAB 2: RIWAYAT STOK (Lazy Load & Keep Alive) */}
+            {/* TAB 2 & MODALS (TETAP SAMA) */}
             <div style={{ display: activeTab === '2' ? 'block' : 'none' }}>
                 {(activeTab === '2' || hasTab2Loaded) && (<StokHistoryTab />)}
             </div>
 
-            {/* MODALS */}
             {isModalOpen && <BukuForm open={isModalOpen} onCancel={handleCloseModal} initialValues={editingBuku} />}
             {isStokModalOpen && <StokFormModal open={isStokModalOpen} onCancel={handleCloseStokModal} buku={stokBuku} />}
             {isPreviewModalVisible && (<PdfPreviewModal visible={isPreviewModalVisible} onClose={handleClosePreviewModal} pdfBlobUrl={pdfPreviewUrl} fileName={pdfFileName} />)}
             {isBulkRestockModalOpen && (<BulkRestockModal open={isBulkRestockModalOpen} onClose={handleCloseBulkRestockModal} bukuList={bukuList} />)}
         </Content>
     );
+// ...
 };
 
 export default BukuPage;

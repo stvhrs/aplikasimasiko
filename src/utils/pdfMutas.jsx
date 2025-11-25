@@ -1,200 +1,143 @@
-// src/utils/mutasiPdfGenerator.js
-
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import dayjs from 'dayjs';
+import { currencyFormatter } from './formatters'; 
 
-// Helper formatter (bisa juga di-share dari file constants)
-const currencyFormatter = (value) =>
-    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value || 0);
+export const generateMutasiPdf = (
+  dataTransaksi, 
+  infoPeriode, 
+  balanceMap, // Parameter ini dibiarkan ada agar tidak error di MutasiPage, meski tidak dipakai di tabel
+  kategoriMasuk, 
+  kategoriKeluar
+) => {
+  const doc = new jsPDF();
 
-// Helper untuk mengambil tanggal
-const getTimestamp = (record) => record?.tanggal || record?.tanggalBayar || 0;
+  // --- 1. Header PDF ---
+  doc.setFontSize(18);
+  doc.text('Laporan Mutasi Keuangan', 14, 22);
 
-/**
- * Membuat Laporan Mutasi dalam format PDF
- * @param {Array} data - Array data (filteredTransaksi)
- * @param {Object} filters - Objek filters dari state
- * @param {Map} balanceMap - Map saldo berjalan
- * @param {Object} KategoriPemasukan - Konstanta KategoriPemasukan
- * @param {Object} KategoriPengeluaran - Konstanta KategoriPengeluaran
- * @returns {Object} { blobUrl, fileName }
- */
-export const generateMutasiPdf = (data, filters, balanceMap, KategoriPemasukan, KategoriPengeluaran) => {
+  doc.setFontSize(11);
+  doc.setTextColor(100);
+  
+  let periodText = 'Semua Periode';
+  if (infoPeriode?.dateRange && infoPeriode.dateRange[0]) {
+    const start = dayjs(infoPeriode.dateRange[0]).format('DD MMM YYYY');
+    const end = dayjs(infoPeriode.dateRange[1]).format('DD MMM YYYY');
+    periodText = `${start} - ${end}`;
+  }
+  
+  doc.text(`Periode: ${periodText}`, 14, 30);
+  doc.setFontSize(9);
+  doc.text(`Dicetak pada: ${dayjs().format('DD MMM YYYY HH:mm')}`, 14, 36);
+
+  // --- 2. Persiapan Data Tabel Utama ---
+  const tableRows = [];
+  let totalMasuk = 0;
+  let totalKeluar = 0;
+
+  // Sort data berdasarkan tanggal
+  const sortedData = [...dataTransaksi].sort((a, b) => {
+    const tA = a.tanggal || a.tanggalBayar || 0;
+    const tB = b.tanggal || b.tanggalBayar || 0;
+    return tA - tB;
+  });
+
+  sortedData.forEach((item, index) => {
+    const tanggal = dayjs(item.tanggal || item.tanggalBayar).format('DD/MM/YYYY');
+    const isMasuk = item.tipe === 'pemasukan';
     
-    const doc = new jsPDF();
-    let startY = 46; // Posisi Y awal untuk tabel pertama
-
-    // --- 1. Judul & Info Filter ---
-    doc.setFontSize(18);
-    doc.text('Laporan Mutasi Transaksi', 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-
-    // Info Periode Data (Selalu tampil)
-    const tglTerbaru = dayjs(getTimestamp(data[0])).format('DD MMM YYYY');
-    const tglTerlama = dayjs(getTimestamp(data[data.length - 1])).format('DD MMM YYYY');
-    doc.text(`Periode Data: ${tglTerlama} - ${tglTerbaru}`, 14, 30);
-
-    // Info Filter Aktif
-    const filterInfo = [];
-    if (filters.dateRange) {
-        filterInfo.push(`Filter Tanggal: ${dayjs(filters.dateRange[0]).format('DD/MM/YY')} - ${dayjs(filters.dateRange[1]).format('DD/MM/YY')}`);
+    let namaKategori = item.kategori;
+    if (isMasuk && kategoriMasuk) {
+        namaKategori = kategoriMasuk[item.kategori] || item.kategori;
+    } else if (!isMasuk && kategoriKeluar) {
+        namaKategori = kategoriKeluar[item.kategori] || item.kategori;
     }
-    if (filters.selectedTipe.length > 0) {
-        filterInfo.push(`Tipe: ${filters.selectedTipe.join(', ')}`);
-    }
-    if (filters.selectedKategori.length > 0) {
-        filterInfo.push(`Kategori: (terpilih)`);
-    }
-    if (filters.searchText) { // Gunakan searchText, bukan debounced
-        filterInfo.push(`Cari: "${filters.searchText}"`);
-    }
+    namaKategori = namaKategori || item.tipeMutasi || '-';
 
-    doc.setFontSize(10);
-    doc.text(`Filter Aktif: ${filterInfo.length > 0 ? filterInfo.join(' | ') : 'Tidak ada'}`, 14, 36);
+    const nominal = Number(item.jumlah) || 0;
+    const nominalMasuk = isMasuk ? nominal : 0;
+    const nominalKeluar = !isMasuk ? Math.abs(nominal) : 0;
 
-    // --- 2. Ringkasan (Rekapitulasi) ---
-    const totalPemasukan = data.reduce((acc, tx) => (tx.jumlah > 0 ? acc + tx.jumlah : acc), 0);
-    const totalPengeluaran = data.reduce((acc, tx) => (tx.jumlah < 0 ? acc + tx.jumlah : acc), 0);
-    const selisih = totalPemasukan + totalPengeluaran;
+    totalMasuk += nominalMasuk;
+    totalKeluar += nominalKeluar;
 
-    autoTable(doc, {
-        startY: startY,
-        body: [
-            ['Total Pemasukan:', currencyFormatter(totalPemasukan)],
-            ['Total Pengeluaran:', currencyFormatter(totalPengeluaran)],
-            ['Selisih (Net):', currencyFormatter(selisih)],
-        ],
-        theme: 'grid',
-        styles: { fontSize: 10, cellPadding: 2 },
-        columnStyles: {
-            0: { fontStyle: 'bold', halign: 'right' },
-            1: { halign: 'right' },
-        },
-        didDrawCell: (data) => {
-            if (data.section === 'body') {
-                if (data.row.index === 0) data.cell.styles.textColor = [40, 167, 69]; // Hijau
-                if (data.row.index === 1) data.cell.styles.textColor = [220, 53, 69]; // Merah
-                if (data.row.index === 2) data.cell.styles.fontStyle = 'bold';
-            }
-        }
-    });
-
-    // --- 3. (BARU) Ringkasan per Kategori ---
-    const pemasukanTotals = {};
-    const pengeluaranTotals = {};
-
-    for (const tx of data) {
-        if (tx.tipe === 'pemasukan') {
-            pemasukanTotals[tx.kategori] = (pemasukanTotals[tx.kategori] || 0) + tx.jumlah;
-        } else if (tx.tipe === 'pengeluaran') {
-            pengeluaranTotals[tx.kategori] = (pengeluaranTotals[tx.kategori] || 0) + tx.jumlah;
-        }
-    }
-
-    // Tabel Kategori Pemasukan
-    const bodyPemasukan = Object.keys(pemasukanTotals).map(key => [
-        KategoriPemasukan[key] || key.replace(/_/g, ' '),
-        currencyFormatter(pemasukanTotals[key])
+    // Push data tanpa kolom saldo
+    tableRows.push([
+      index + 1,
+      tanggal,
+      namaKategori,
+      item.keterangan || '-',
+      nominalMasuk ? currencyFormatter(nominalMasuk) : '-',
+      nominalKeluar ? currencyFormatter(nominalKeluar) : '-',
     ]);
-    
-    if (bodyPemasukan.length > 0) {
-        autoTable(doc, {
-            head: [['Ringkasan Pemasukan per Kategori', 'Total']],
-            body: bodyPemasukan,
-            startY: doc.lastAutoTable.finalY + 10, // Mulai setelah tabel ringkasan
-            theme: 'striped',
-            headStyles: { fillColor: [40, 167, 69] }, // Hijau
-            styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: { 1: { halign: 'right' } },
-            // <-- PERBAIKAN 1: Menambahkan didParseCell untuk align header "Total"
-            didParseCell: (data) => {
-                if (data.section === 'head' && data.column.index === 1) {
-                    data.cell.styles.halign = 'right';
-                }
-            }
-            // <-- AKHIR PERBAIKAN 1
-        });
+  });
+
+  // --- 3. Render Tabel Transaksi (Tanpa Saldo) ---
+  autoTable(doc, {
+    startY: 45,
+    head: [['No', 'Tanggal', 'Kategori', 'Keterangan', 'Masuk', 'Keluar']],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [22, 119, 255] },
+    styles: { fontSize: 9, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      4: { halign: 'right' }, // Masuk
+      5: { halign: 'right' }, // Keluar
+    },
+    // Simpan posisi Y terakhir setelah tabel selesai
+    didDrawPage: (data) => {
+        doc.lastAutoTable = data; 
     }
+  });
 
-    // Tabel Kategori Pengeluaran
-    const bodyPengeluaran = Object.keys(pengeluaranTotals).map(key => [
-        KategoriPengeluaran[key] || key.replace(/_/g, ' '),
-        currencyFormatter(pengeluaranTotals[key])
-    ]);
-    
-    if (bodyPengeluaran.length > 0) {
-        autoTable(doc, {
-            head: [['Ringkasan Pengeluaran per Kategori', 'Total']],
-            body: bodyPengeluaran,
-            // Perbaiki startY agar tidak tumpang tindih jika kedua tabel ada
-            startY: doc.lastAutoTable.finalY + (bodyPemasukan.length > 0 ? 5 : 10),
-            theme: 'striped',
-            headStyles: { fillColor: [220, 53, 69] }, // Merah
-            styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: { 1: { halign: 'right' } },
-            // <-- PERBAIKAN 2: Menambahkan didParseCell untuk align header "Total"
-            didParseCell: (data) => {
-                if (data.section === 'head' && data.column.index === 1) {
-                    data.cell.styles.halign = 'right';
-                }
-            }
-            // <-- AKHIR PERBAIKAN 2
-        });
-    }
+  // --- 4. Render Tabel Rekapitulasi (Baru) ---
+  
+  // Ambil posisi Y terakhir dari tabel sebelumnya + margin 10
+  const finalY = doc.lastAutoTable.finalY + 10;
+  const selisih = totalMasuk - totalKeluar;
 
-    // --- 4. Tabel Data Transaksi ---
-    const tableHeaders = ['Tanggal', 'Jenis Transaksi', 'Keterangan', 'Nominal', 'Saldo Akhir'];
-    const tableBody = data.map(tx => [
-        dayjs(getTimestamp(tx)).format('DD/MM/YYYY'),
-        KategoriPemasukan[tx.kategori] || KategoriPengeluaran[tx.kategori] || tx.kategori?.replace(/_/g, ' ') || tx.tipeMutasi,
-        tx.keterangan || '-',
-        currencyFormatter(tx.jumlah),
-        currencyFormatter(balanceMap.get(tx.id))
-    ]);
-
-    autoTable(doc, {
-        head: [tableHeaders],
-        body: tableBody,
-        startY: doc.lastAutoTable.finalY + 10, // Mulai setelah tabel ringkasan
-        theme: 'striped',
-        headStyles: { fillColor: [41, 128, 185] },
-        styles: { fontSize: 8, cellPadding: 2 },
-        columnStyles: {
-            3: { halign: 'right' },
-            4: { halign: 'right' },
-        },
-        
-        // <-- PERBAIKAN 3: Ganti seluruh didParseCell
-        didParseCell: (dataHook) => {
-            // 1. Perbaikan Alignment Header
-            if (dataHook.section === 'head') {
-                if (dataHook.column.index === 3 || dataHook.column.index === 4) {
-                    dataHook.cell.styles.halign = 'right';
-                }
-            }
-
-            // 2. Perbaikan Logika Pewarnaan Body
-            if (dataHook.section === 'body' && dataHook.column.index === 3) {
-                // 'data' adalah array asli yang di-pass ke 'generateMutasiPdf'
-                // Kita ambil 'tx' berdasarkan index baris
-                const tx = data[dataHook.row.index]; 
-
-                if (tx && typeof tx.jumlah === 'number' && tx.jumlah < 0) {
-                    dataHook.cell.styles.textColor = [220, 53, 69]; // Merah
-                } else {
-                    dataHook.cell.styles.textColor = [40, 167, 69]; // Hijau
-                }
-            }
+  autoTable(doc, {
+    startY: finalY,
+    head: [['RINGKASAN', 'NOMINAL']],
+    body: [
+        ['Total Pemasukan', currencyFormatter(totalMasuk)],
+        ['Total Pengeluaran', currencyFormatter(totalKeluar)],
+        ['Surplus / (Defisit)', currencyFormatter(selisih)]
+    ],
+    theme: 'plain', // Tampilan lebih bersih
+    tableWidth: 80, // Lebar tabel kecil saja
+    margin: { left: 14 }, // Rata kiri
+    headStyles: { 
+        fillColor: [240, 240, 240], 
+        textColor: 0, 
+        fontStyle: 'bold',
+        lineWidth: 0.1,
+        lineColor: 200
+    },
+    bodyStyles: {
+        lineWidth: 0.1,
+        lineColor: 200
+    },
+    columnStyles: {
+        1: { halign: 'right', fontStyle: 'bold' }
+    },
+    didParseCell: (data) => {
+        // Warnai baris surplus/defisit
+        if (data.row.index === 2 && data.section === 'body') {
+             if (selisih >= 0) {
+                 data.cell.styles.textColor = [0, 128, 0]; // Hijau
+             } else {
+                 data.cell.styles.textColor = [255, 0, 0]; // Merah
+             }
         }
-        // <-- AKHIR PERBAIKAN 3
-    });
+    }
+  });
 
-    // --- 5. Return Blob ---
-    const pdfBlob = doc.output('blob');
-    const url = URL.createObjectURL(pdfBlob);
-    const fileName = `Laporan_Mutasi_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+  // --- 5. Output ---
+  const fileName = `Laporan_Mutasi_${dayjs().format('YYYYMMDD_HHmm')}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
 
-    return { blobUrl: url, fileName: fileName };
+  return { blobUrl, fileName };
 };

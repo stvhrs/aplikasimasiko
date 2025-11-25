@@ -271,7 +271,7 @@ export default function TransaksiJualForm({
                 updates[`transaksiJualBuku/${txKey}`] = {
                     ...baseTx,
                     jumlahTerbayar: 0,
-                    statusPembayaran: 'Belum Bayar',
+                    statusPembayaran: 'Belum',
                     historiPembayaran: null,
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp()
@@ -299,9 +299,9 @@ export default function TransaksiJualForm({
                 const existingTerbayar = Number(initialTx.jumlahTerbayar || 0);
                 
                 // Cek Status Baru berdasarkan tagihan revisi
-                let statusBaru = 'Belum Bayar';
+                let statusBaru = 'Belum';
                 if (existingTerbayar >= finalTotalTagihan) statusBaru = 'Lunas';
-                else if (existingTerbayar > 0) statusBaru = 'Sebagian';
+                else if (existingTerbayar > 0) statusBaru = 'Belum';
 
                 updates[`transaksiJualBuku/${editTxKey}`] = {
                     ...initialTx,

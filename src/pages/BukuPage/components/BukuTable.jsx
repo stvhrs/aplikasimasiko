@@ -25,48 +25,7 @@ const BukuTableComponent = ({
     return (
         <>
             {/* --- BAGIAN RINGKASAN DATA (4 KOLOM) --- */}
-            <Row gutter={[16, 16]} style={{ margin: '16px 0' }}>
-                
-                {/* 1. Total Judul */}
-                <Col xl={6} md={6} sm={12} xs={24}>
-                    <Card size="small" bordered={false} style={{ backgroundColor: '#f0f2f5', width: '100%' }}>
-                        <Typography.Text strong>Total Judul</Typography.Text>
-                        <Title level={4} style={{ margin: 0 }}>
-                            {isCalculating ? <Spin size="small" /> : numberFormatter(summaryData?.totalJudul || 0)}
-                        </Title>
-                    </Card>
-                </Col>
-
-                {/* 2. Total Stok */}
-                <Col xl={6} md={6} sm={12} xs={24}>
-                    <Card size="small" bordered={false} style={{ backgroundColor: '#f0f2f5', width: '100%' }}>
-                        <Typography.Text strong>Total Stok</Typography.Text>
-                        <Title level={4} style={{ margin: 0 }}>
-                            {isCalculating ? <Spin size="small" /> : numberFormatter(summaryData?.totalStok || 0)}
-                        </Title>
-                    </Card>
-                </Col>
-
-                {/* 3. Total Aset (Harga Jual) */}
-                <Col xl={6} md={6} sm={12} xs={24}>
-                    <Card size="small" bordered={false} style={{ backgroundColor: '#f0f2f5', width: '100%' }}>
-                        <Typography.Text strong>Total Aset (Hrg. Jual)</Typography.Text>
-                        <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-                            {isCalculating ? <Spin size="small" /> : currencyFormatter(summaryData?.totalAsset || 0)}
-                        </Title>
-                    </Card>
-                </Col>
-
-                {/* 4. Total Aset (Net setelah Diskon) */}
-                <Col xl={6} md={6} sm={12} xs={24}>
-                    <Card size="small" bordered={false} style={{ backgroundColor: '#f0f2f5', width: '100%' }}>
-                        <Typography.Text strong>Total Aset (Net)</Typography.Text>
-                        <Title level={4} style={{ margin: 0, color: '#52c41a' }}>
-                            {isCalculating ? <Spin size="small" /> : currencyFormatter(summaryData?.totalAssetNet || 0)}
-                        </Title>
-                    </Card>
-                </Col>
-            </Row>
+          
 
             {/* --- TABEL UTAMA --- */}
             <Table

@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback, useDeferredValue, useTransition } from 'react';
 import {
     Layout, Card, Spin, Input, Row, Col, Tag, Button, Modal,
-    Dropdown, App, DatePicker, Space, Tabs, Divider, Grid, Empty,Typography 
+    Dropdown, App, DatePicker, Space, Tabs, Divider, Grid, Empty, Typography
 } from 'antd';
 import {
-    PlusOutlined, MoreOutlined, DownloadOutlined, ShareAltOutlined, EditOutlined,
-    PrinterOutlined, ReadOutlined, PullRequestOutlined, SearchOutlined,
-    CloseCircleOutlined
+    PlusOutlined, MoreOutlined, PrinterOutlined, ReadOutlined, 
+    PullRequestOutlined, SearchOutlined, CloseCircleOutlined,
+    DownloadOutlined, ShareAltOutlined // Pastikan icon ini diimport
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/id';
@@ -21,10 +21,12 @@ import TransaksiJualDetailModal from './components/TransaksiJualDetailModal';
 import TransaksiJualTableComponent from './components/TransaksiJualTableComponent';
 import { generateInvoicePDF, generateNotaPDF } from '../../utils/pdfGenerator';
 
-// IMPORT HOOK YANG SUDAH DIPERBAIKI
-import { useTransaksiJualStream } from '../../hooks/useFirebaseData'; 
+// IMPORT HOOK
+import { useTransaksiJualStream } from '../../hooks/useFirebaseData';
 
 import TagihanPelangganTab from './components/TagihanPelangganTab';
+import PdfPreviewModal from '../BukuPage/components/PdfPreviewModal';
+;
 
 const { Content } = Layout;
 const { Text } = Typography;
@@ -41,7 +43,7 @@ const chipStyle = { padding: '5px 16px', fontSize: '14px', border: '1px solid #d
 export default function TransaksiJualPage() {
     const { message } = App.useApp();
     const screens = useBreakpoint();
-    const [isPending, startTransition] = useTransition(); // Untuk rendering tabel yang berat
+    const [isPending, startTransition] = useTransition();
 
     // --- STATE CONFIG ---
     const defaultStart = useMemo(() => dayjs().startOf('year'), []);
@@ -60,9 +62,8 @@ export default function TransaksiJualPage() {
     }, [dateRange, isAllTime]);
 
     // --- DATA FETCHING ---
-    // loadingTransaksi akan TRUE saat switch filter karena kita reset data di hook
     const { transaksiList: allTransaksi = [], loadingTransaksi } = useTransaksiJualStream(filterParams);
-    
+
     // --- State UI ---
     const [searchText, setSearchText] = useState('');
     const debouncedSearchText = useDebounce(searchText, 300);
@@ -79,12 +80,12 @@ export default function TransaksiJualPage() {
     const [editingTx, setEditingTx] = useState(null);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [selectedTransaksi, setSelectedTransaksi] = useState(null);
-    
+
+    // --- PDF State ---
     const [isTxPdfModalOpen, setIsTxPdfModalOpen] = useState(false);
-    const [txPdfBlob, setTxPdfBlob] = useState(null);
-    const [txPdfTitle, setTxPdfTitle] = useState('');
-    const [isTxPdfGenerating, setIsTxPdfGenerating] = useState(false);
+    const [pdfPreviewUrl, setPdfPreviewUrl] = useState(''); // URL string untuk PdfPreviewModal
     const [txPdfFileName, setTxPdfFileName] = useState('laporan.pdf');
+    const [isTxPdfGenerating, setIsTxPdfGenerating] = useState(false); // Untuk loading button
 
     // --- Filtering Logic ---
     const deferredAllTransaksi = useDeferredValue(allTransaksi);
@@ -129,7 +130,7 @@ export default function TransaksiJualPage() {
     }, [filteredTransaksi]);
 
     const TabSummary = useMemo(() => {
-        if (screens.xs) return null; 
+        if (screens.xs) return null;
         return (
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', height: '100%', paddingRight: '8px' }}>
                 <div style={{ textAlign: 'right' }}><Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>Total Tagihan</Text><Text strong>{formatCurrency(footerTotals.totalTagihan)}</Text></div>
@@ -142,44 +143,123 @@ export default function TransaksiJualPage() {
     }, [footerTotals, screens.xs]);
 
     // --- Handlers ---
-    // Note: Kita tidak membungkus setDateRange di startTransition karena kita INGIN loading spinner dari hook muncul segera.
-    // useTransition lebih cocok untuk filtering client-side yang berat, bukan fetching data baru.
-    
     const handleSearchChange = useCallback((e) => { setSearchText(e.target.value); setPagination(prev => ({ ...prev, current: 1 })); }, []);
-    
-    const handleDateChange = useCallback((dates) => { 
-        setIsAllTime(false); 
-        setDateRange(dates); 
-        setPagination(prev => ({ ...prev, current: 1 })); 
-    }, []);
-    
-    const handleToggleAllTime = useCallback((checked) => { 
-        setIsAllTime(checked); 
-        setPagination(prev => ({ ...prev, current: 1 })); 
-    }, []);
-    
-    const resetFilters = useCallback(() => { 
-        setSearchText(''); setSelectedStatus([]); 
-        setIsAllTime(false); setDateRange([defaultStart, defaultEnd]); 
-    }, [defaultStart, defaultEnd]);
-
+    const handleDateChange = useCallback((dates) => { setIsAllTime(false); setDateRange(dates); setPagination(prev => ({ ...prev, current: 1 })); }, []);
+    const handleToggleAllTime = useCallback((checked) => { setIsAllTime(checked); setPagination(prev => ({ ...prev, current: 1 })); }, []);
+    const resetFilters = useCallback(() => { setSearchText(''); setSelectedStatus([]); setIsAllTime(false); setDateRange([defaultStart, defaultEnd]); }, [defaultStart, defaultEnd]);
     const handleTableChange = useCallback((p, f) => { setPagination(p); setSelectedStatus(f.statusPembayaran || []); }, []);
 
-    // Modal Handlers...
+    // Modal Handlers
     const handleOpenCreate = useCallback(() => { setFormMode('create'); setEditingTx(null); setIsFormModalOpen(true); }, []);
     const handleOpenEdit = useCallback((tx) => { setFormMode('edit'); setEditingTx(tx); setIsFormModalOpen(true); }, []);
     const handleCloseFormModal = useCallback(() => { setIsFormModalOpen(false); setEditingTx(null); }, []);
     const handleFormSuccess = useCallback(() => { handleCloseFormModal(); }, [handleCloseFormModal]);
     const handleOpenDetailModal = useCallback((tx) => { setSelectedTransaksi(tx); setIsDetailModalOpen(true); }, []);
     const handleCloseDetailModal = useCallback(() => { setSelectedTransaksi(null); setIsDetailModalOpen(false); }, []);
+
+    // --- PDF & PREVIEW HANDLERS ---
     
-    // PDF Handlers...
-    const handleCloseTxPdfModal = () => { setIsTxPdfModalOpen(false); setTxPdfBlob(null); };
-    const handleGenerateInvoice = async (tx) => { setTxPdfFileName(tx.nomorInvoice); setIsTxPdfGenerating(true); setIsTxPdfModalOpen(true); try { const b = await fetch(generateInvoicePDF(tx)).then(r=>r.blob()); setTxPdfBlob(b); } finally { setIsTxPdfGenerating(false); } };
-    const handleGenerateNota = async (tx) => { setTxPdfFileName("Nota-" + tx.nomorInvoice); setIsTxPdfGenerating(true); setIsTxPdfModalOpen(true); try { const b = await fetch(generateNotaPDF(tx)).then(r=>r.blob()); setTxPdfBlob(b); } finally { setIsTxPdfGenerating(false); } };
-    const handleDownloadTxPdf = () => { if(txPdfBlob) { const a = document.createElement('a'); a.href=URL.createObjectURL(txPdfBlob); a.download=txPdfFileName; a.click(); } };
-    const handleShareTxPdf = async () => { if(navigator.share && txPdfBlob) { const f = new File([txPdfBlob], txPdfFileName, {type:'application/pdf'}); navigator.share({files:[f]}); } };
-    const handleGenerateReportPdf = () => { /* Report Logic */ };
+    // Fungsi helper untuk membuka modal setelah blob siap
+    const openPdfModal = (blob, fileName) => {
+        const url = URL.createObjectURL(blob);
+        setPdfPreviewUrl(url);
+        setTxPdfFileName(fileName);
+        setIsTxPdfModalOpen(true);
+        setIsTxPdfGenerating(false);
+    };
+
+    const handleCloseTxPdfModal = () => {
+        setIsTxPdfModalOpen(false);
+        if (pdfPreviewUrl) {
+            URL.revokeObjectURL(pdfPreviewUrl); // Bersihkan memori
+            setPdfPreviewUrl('');
+        }
+    };
+
+    const handleGenerateInvoice = async (tx) => { 
+        message.loading({ content: 'Membuat Invoice...', key: 'pdfGen' });
+        try { 
+            const blob = await fetch(generateInvoicePDF(tx)).then(r => r.blob()); 
+            openPdfModal(blob, `${tx.nomorInvoice}.pdf`);
+            message.success({ content: 'Invoice Siap', key: 'pdfGen' });
+        } catch (e) {
+            message.error({ content: 'Gagal membuat Invoice', key: 'pdfGen' });
+        }
+    };
+
+    const handleGenerateNota = async (tx) => { 
+        message.loading({ content: 'Membuat Nota...', key: 'pdfGen' });
+        try { 
+            const blob = await fetch(generateNotaPDF(tx)).then(r => r.blob()); 
+            openPdfModal(blob, `Nota-${tx.nomorInvoice}.pdf`);
+            message.success({ content: 'Nota Siap', key: 'pdfGen' });
+        } catch (e) {
+            message.error({ content: 'Gagal membuat Nota', key: 'pdfGen' });
+        }
+    };
+    
+    const handleGenerateReportPdf = () => {
+        setIsTxPdfGenerating(true);
+        
+        // Gunakan timeout kecil agar UI sempat update status loading
+        setTimeout(() => {
+            try {
+                const doc = new jsPDF();
+                const nowStr = dayjs().format('YYYYMMDD_HHmm');
+                const fileName = `Laporan_Transaksi_${nowStr}.pdf`;
+
+                // 1. Header Laporan
+                doc.setFontSize(16);
+                doc.text("Laporan Transaksi Penjualan", 9, 15);
+
+                // 2. Info Periode
+                doc.setFontSize(10);
+                let periodeInfo = isAllTime ? "Periode: Semua Waktu" : 
+                    (dateRange?.[0] ? `Periode: ${dateRange[0].format('DD MMM YYYY')} s/d ${dateRange[1].format('DD MMM YYYY')}` : "");
+                doc.text(periodeInfo, 9, 22);
+
+                // 3. Persiapan Data Tabel
+                const tableColumn = ["No", "Tanggal", "No. Invoice", "Pelanggan", "Total", "Terbayar", "Sisa", "Status"];
+                const tableRows = filteredTransaksi.map((tx, index) => [
+                    index + 1,
+                    formatDate(tx.tanggal),
+                    tx.nomorInvoice,
+                    tx.namaPelanggan,
+                    formatCurrency(tx.totalTagihan),
+                    formatCurrency(tx.jumlahTerbayar),
+                    formatCurrency(tx.totalTagihan - tx.jumlahTerbayar),
+                    normalizeStatus(tx.statusPembayaran)
+                ]);
+
+                // 4. Generate Tabel
+                autoTable(doc, {
+                    head: [tableColumn],
+                    body: tableRows,
+                    startY: 30,
+                    styles: { fontSize: 8 },
+                    headStyles: { fillColor: [22, 119, 255] },
+                });
+
+                // 5. Summary Footer
+                const finalY = doc.lastAutoTable.finalY + 10;
+                doc.setFontSize(10);
+                doc.setFont("helvetica", "bold");
+                doc.text(`Total Transaksi: ${filteredTransaksi.length}`, 9, finalY);
+                doc.text(`Total Tagihan: ${formatCurrency(footerTotals.totalTagihan)}`, 9, finalY + 5);
+                doc.text(`Total Terbayar: ${formatCurrency(footerTotals.totalTerbayar)}`, 9, finalY + 10);
+                doc.text(`Total Sisa: ${formatCurrency(footerTotals.totalSisa)}`, 9, finalY + 15);
+
+                // 6. Output Blob & Open Modal
+                const pdfBlob = doc.output('blob');
+                openPdfModal(pdfBlob, fileName);
+                
+            } catch (error) {
+                console.error("Gagal membuat PDF:", error);
+                message.error("Gagal membuat laporan PDF");
+                setIsTxPdfGenerating(false);
+            }
+        }, 100);
+    };
 
     const renderAksi = useCallback((_, record) => {
         const items = [
@@ -195,20 +275,15 @@ export default function TransaksiJualPage() {
     const columns = useMemo(() => [
         { title: 'No.', width: 60, render: (_t, _r, idx) => ((pagination.current - 1) * pagination.pageSize) + idx + 1 },
         { title: 'Tanggal', dataIndex: 'tanggal', width: 120, render: formatDate, sorter: (a, b) => a.tanggal - b.tanggal },
-        { title: 'ID', dataIndex: 'id', width: 180, render: (id, r) => <Text copyable={{text: r.nomorInvoice}}>{r.nomorInvoice || id}</Text> },
-        { title: 'Pelanggan', dataIndex: 'namaPelanggan', width: 200, sorter: (a, b) => (a.namaPelanggan||'').localeCompare(b.namaPelanggan||''), render: (val, r) => <span>{val} {r.pelangganIsSpesial && <Tag color="gold">Spesial</Tag>}</span> },
+        { title: 'ID', dataIndex: 'id', width: 180, render: (id, r) => <Text copyable={{ text: r.nomorInvoice }}>{r.nomorInvoice || id}</Text> },
+        { title: 'Pelanggan', dataIndex: 'namaPelanggan', width: 200, sorter: (a, b) => (a.namaPelanggan || '').localeCompare(b.namaPelanggan || ''), render: (val, r) => <span>{val} {r.pelangganIsSpesial && <Tag color="gold">Spesial</Tag>}</span> },
         { title: 'Total', dataIndex: 'totalTagihan', align: 'right', width: 140, render: formatCurrency, sorter: (a, b) => a.totalTagihan - b.totalTagihan },
-        { title: 'Sisa', key: 'sisa', align: 'right', width: 140, render: (_, r) => <span style={{color: (r.totalTagihan - r.jumlahTerbayar) > 0 ? 'red' : 'green'}}>{formatCurrency(r.totalTagihan - r.jumlahTerbayar)}</span> },
+        { title: 'Sisa', key: 'sisa', align: 'right', width: 140, render: (_, r) => <span style={{ color: (r.totalTagihan - r.jumlahTerbayar) > 0 ? 'red' : 'green' }}>{formatCurrency(r.totalTagihan - r.jumlahTerbayar)}</span> },
         { title: 'Status', dataIndex: 'statusPembayaran', width: 120, filters: [{ text: 'Belum', value: 'Belum' }, { text: 'Sebagian', value: 'Sebagian' }, { text: 'Lunas', value: 'Lunas' }], filteredValue: selectedStatus.length ? selectedStatus : null, render: (s) => <Tag color={normalizeStatus(s) === 'Lunas' ? 'green' : normalizeStatus(s) === 'Belum' ? 'red' : 'orange'}>{normalizeStatus(s)}</Tag> },
         { title: 'Aksi', align: 'center', width: 80, render: renderAksi },
     ], [pagination, renderAksi, selectedStatus]);
 
-    const tableScrollX = 1200; 
-
-    // --- COMBINED LOADING ---
-    // Loading akan muncul jika:
-    // 1. Firebase sedang download data baru (loadingTransaksi)
-    // 2. React sedang render data besar (isPending)
+    const tableScrollX = 1200;
     const isLoading = loadingTransaksi || isPending;
 
     const tabItems = [
@@ -226,18 +301,24 @@ export default function TransaksiJualPage() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {isFilterActive && <Button icon={<CloseCircleOutlined />} danger type="text" size="small" onClick={resetFilters}>Reset</Button>}
                                     <Tag.CheckableTag style={{ ...chipStyle, backgroundColor: isAllTime ? '#1890ff' : 'transparent', color: isAllTime ? '#fff' : 'black' }} checked={isAllTime} onChange={handleToggleAllTime}>Semua</Tag.CheckableTag>
-                                    <RangePicker format="D MMM YYYY" value={dateRange} onChange={handleDateChange} disabled={isAllTime} allowClear={false} style={{width: 240}} />
+                                    <RangePicker format="D MMM YYYY" value={dateRange} onChange={handleDateChange} disabled={isAllTime} allowClear={false} style={{ width: 240 }} />
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
-                                    <Button icon={<PrinterOutlined />} onClick={handleGenerateReportPdf} disabled={!filteredTransaksi.length}>PDF</Button>
+                                    {/* BUTTON LAPORAN DENGAN LOADING ANIMATION */}
+                                    <Button 
+                                        icon={<PrinterOutlined />} 
+                                        onClick={handleGenerateReportPdf} 
+                                        disabled={!filteredTransaksi.length} 
+                                        loading={isTxPdfGenerating} // <-- ANIMASI LOADING DISINI
+                                    >
+                                        Laporan PDF
+                                    </Button>
                                     <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>Tambah</Button>
                                 </div>
                             </div>
                         </Col>
                     </Row>
-                    
-                    {/* --- SPIN LOADING UNTUK SELURUH TABEL --- */}
-                    {/* Karena data di-reset di hook, tabel akan kosong, dan Spin akan muncul di tengah */}
+
                     <Spin spinning={isLoading} tip={isAllTime ? "Mengunduh & Memproses SEMUA data..." : "Memuat data..."} size="large" style={{ minHeight: 200 }}>
                         <TransaksiJualTableComponent columns={columns} dataSource={filteredTransaksi} loading={isLoading} pagination={pagination} handleTableChange={handleTableChange} tableScrollX={tableScrollX} rowClassName={(r, i) => (i % 2 === 0 ? 'table-row-even' : 'table-row-odd')} />
                     </Spin>
@@ -255,16 +336,20 @@ export default function TransaksiJualPage() {
         <Layout>
             <Content style={{ padding: screens.xs ? '12px' : '24px', backgroundColor: '#f0f2f5' }}>
                 <Tabs defaultActiveKey="1" type="card" items={tabItems} tabBarExtraContent={TabSummary} destroyInactiveTabPane={false} />
-                
+
                 {isFormModalOpen && (
                     <TransaksiJualForm key={editingTx?.id || 'create'} open={isFormModalOpen} onCancel={handleCloseFormModal} mode={formMode} initialTx={editingTx} onSuccess={handleFormSuccess} />
                 )}
 
                 <TransaksiJualDetailModal open={isDetailModalOpen} onCancel={handleCloseDetailModal} transaksi={selectedTransaksi} />
-                
-                <Modal title={txPdfTitle} open={isTxPdfModalOpen} onCancel={handleCloseTxPdfModal} width="90vw" footer={null} destroyOnClose>
-                    {isTxPdfGenerating ? <Spin tip="Generate PDF..." /> : txPdfBlob ? <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js"><Viewer fileUrl={URL.createObjectURL(txPdfBlob)} /></Worker> : <Empty />}
-                </Modal>
+
+                {/* MODAL PDF PREVIEW IMPORTED */}
+                <PdfPreviewModal 
+                    visible={isTxPdfModalOpen} 
+                    onClose={handleCloseTxPdfModal} 
+                    pdfBlobUrl={pdfPreviewUrl} 
+                    fileName={txPdfFileName} 
+                />
             </Content>
         </Layout>
     );

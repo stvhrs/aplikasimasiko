@@ -231,7 +231,7 @@ export default function TagihanPelangganTab({ allTransaksi, loadingTransaksi, da
                     </Col>
                     <Col xs={24} md={6}>
                         <Button icon={<PrinterOutlined />} onClick={handleGeneratePdf} disabled={filteredCustomerSummary.length === 0 || isGeneratingPdf} loading={isGeneratingPdf} style={{ width: '100%' }}>
-                            Cetak PDF
+                            Download
                         </Button>
                     </Col>
                 </Row>
