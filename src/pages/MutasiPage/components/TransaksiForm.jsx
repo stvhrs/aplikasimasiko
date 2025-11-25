@@ -156,7 +156,7 @@ const TransaksiForm = ({ open, onCancel, initialValues }) => {
                 setReturItems(mappedItems);
                 setSummaryRetur({ totalAwal: tx.totalTagihan, totalRetur: 0, totalAkhir: tx.totalTagihan });
                 form.setFieldsValue({
-                    keterangan: `Retur buku dari invoice ${tx.nomorInvoice}`,
+                    keterangan: `Retur buku dari invoice ${tx.nomorInvoice} ${tx.namaPelanggan}`,
                     jumlah: 0,
                     tipeTransaksi: "Penjualan Buku",
                     tipe: TipeTransaksi.pengeluaran
@@ -285,7 +285,7 @@ const TransaksiForm = ({ open, onCancel, initialValues }) => {
                                 perubahan: itemRetur.qtyRetur,
                                 stokSebelum: stokSekarang,
                                 stokSesudah: stokBaru,
-                                keterangan: `Retur Invoice ${originalInvoice.nomorInvoice}`,
+                                keterangan: `Retur Invoice ${originalInvoice.nomorInvoice} ${originalInvoice.namaPelanggan}`,
                                 refId: dataLain.idTransaksi,
                                 timestamp: timestampNow // Penting untuk delete nanti
                             };
