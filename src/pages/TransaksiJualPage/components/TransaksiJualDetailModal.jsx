@@ -143,8 +143,8 @@ const TransaksiJualDetailModal = ({ open, onCancel, transaksi }) => {
             open={open}
             onCancel={onCancel} centered={true}
             title={`Detail Transaksi: ${nomorInvoice || ''}`}
-            width="50vw"
-            style={{ top: 0, padding: 0, margin: 0, maxWidth: '50vw' }}
+            width="70vw"
+            style={{ top: 0, padding: 0, margin: 0, maxWidth: '70vw' }}
             footer={[
                 <Button key="close" type="primary" onClick={onCancel}>
                     Tutup

@@ -4,7 +4,7 @@ import {
     Dropdown, App, DatePicker, Space, Tabs, Divider, Grid, Empty, Typography
 } from 'antd';
 import {
-    PlusOutlined, MoreOutlined, PrinterOutlined, ReadOutlined, 
+    PlusOutlined, MoreOutlined, PrinterOutlined, ReadOutlined,
     PullRequestOutlined, SearchOutlined, CloseCircleOutlined,
     DownloadOutlined, ShareAltOutlined // Pastikan icon ini diimport
 } from '@ant-design/icons';
@@ -158,7 +158,7 @@ export default function TransaksiJualPage() {
     const handleCloseDetailModal = useCallback(() => { setSelectedTransaksi(null); setIsDetailModalOpen(false); }, []);
 
     // --- PDF & PREVIEW HANDLERS ---
-    
+
     // Fungsi helper untuk membuka modal setelah blob siap
     const openPdfModal = (blob, fileName) => {
         const url = URL.createObjectURL(blob);
@@ -176,10 +176,10 @@ export default function TransaksiJualPage() {
         }
     };
 
-    const handleGenerateInvoice = async (tx) => { 
+    const handleGenerateInvoice = async (tx) => {
         message.loading({ content: 'Membuat Invoice...', key: 'pdfGen' });
-        try { 
-            const blob = await fetch(generateInvoicePDF(tx)).then(r => r.blob()); 
+        try {
+            const blob = await fetch(generateInvoicePDF(tx)).then(r => r.blob());
             openPdfModal(blob, `${tx.nomorInvoice}.pdf`);
             message.success({ content: 'Invoice Siap', key: 'pdfGen' });
         } catch (e) {
@@ -187,20 +187,20 @@ export default function TransaksiJualPage() {
         }
     };
 
-    const handleGenerateNota = async (tx) => { 
+    const handleGenerateNota = async (tx) => {
         message.loading({ content: 'Membuat Nota...', key: 'pdfGen' });
-        try { 
-            const blob = await fetch(generateNotaPDF(tx)).then(r => r.blob()); 
+        try {
+            const blob = await fetch(generateNotaPDF(tx)).then(r => r.blob());
             openPdfModal(blob, `Nota-${tx.nomorInvoice}.pdf`);
             message.success({ content: 'Nota Siap', key: 'pdfGen' });
         } catch (e) {
             message.error({ content: 'Gagal membuat Nota', key: 'pdfGen' });
         }
     };
-    
+
     const handleGenerateReportPdf = () => {
         setIsTxPdfGenerating(true);
-        
+
         // Gunakan timeout kecil agar UI sempat update status loading
         setTimeout(() => {
             try {
@@ -214,7 +214,7 @@ export default function TransaksiJualPage() {
 
                 // 2. Info Periode
                 doc.setFontSize(10);
-                let periodeInfo = isAllTime ? "Periode: Semua Waktu" : 
+                let periodeInfo = isAllTime ? "Periode: Semua Waktu" :
                     (dateRange?.[0] ? `Periode: ${dateRange[0].format('DD MMM YYYY')} s/d ${dateRange[1].format('DD MMM YYYY')}` : "");
                 doc.text(periodeInfo, 9, 22);
 
@@ -252,7 +252,7 @@ export default function TransaksiJualPage() {
                 // 6. Output Blob & Open Modal
                 const pdfBlob = doc.output('blob');
                 openPdfModal(pdfBlob, fileName);
-                
+
             } catch (error) {
                 console.error("Gagal membuat PDF:", error);
                 message.error("Gagal membuat laporan PDF");
@@ -267,7 +267,7 @@ export default function TransaksiJualPage() {
             { key: "edit", label: "Edit Transaksi", onClick: () => handleOpenEdit(record) },
             { type: "divider" },
             { key: "inv", label: "Generate Invoice", onClick: () => handleGenerateInvoice(record) },
-            { key: "nota", label: "Generate Nota", disabled: !["Sebagian", "Lunas"].includes(normalizeStatus(record?.statusPembayaran)), onClick: () => handleGenerateNota(record) },
+            { key: "nota", label: "Generate Nota", disabled: ![ "Lunas"].includes(normalizeStatus(record?.statusPembayaran)), onClick: () => handleGenerateNota(record) },
         ];
         return <Dropdown menu={{ items }} trigger={["click"]}><Button icon={<MoreOutlined />} size="small" /></Dropdown>;
     }, [handleOpenDetailModal, handleOpenEdit]);
@@ -278,8 +278,12 @@ export default function TransaksiJualPage() {
         { title: 'ID', dataIndex: 'id', width: 180, render: (id, r) => <Text copyable={{ text: r.nomorInvoice }}>{r.nomorInvoice || id}</Text> },
         { title: 'Pelanggan', dataIndex: 'namaPelanggan', width: 200, sorter: (a, b) => (a.namaPelanggan || '').localeCompare(b.namaPelanggan || ''), render: (val, r) => <span>{val} {r.pelangganIsSpesial && <Tag color="gold">Spesial</Tag>}</span> },
         { title: 'Total', dataIndex: 'totalTagihan', align: 'right', width: 140, render: formatCurrency, sorter: (a, b) => a.totalTagihan - b.totalTagihan },
-        { title: 'Sisa', key: 'sisa', align: 'right', width: 140, render: (_, r) => <span style={{ color: (r.totalTagihan - r.jumlahTerbayar) > 0 ? 'red' : 'green' }}>{formatCurrency(r.totalTagihan - r.jumlahTerbayar)}</span> },
-        { title: 'Status', dataIndex: 'statusPembayaran', width: 120, filters: [{ text: 'Belum', value: 'Belum' }, { text: 'Sebagian', value: 'Sebagian' }, { text: 'Lunas', value: 'Lunas' }], filteredValue: selectedStatus.length ? selectedStatus : null, render: (s) => <Tag color={normalizeStatus(s) === 'Lunas' ? 'green' : normalizeStatus(s) === 'Belum' ? 'red' : 'orange'}>{normalizeStatus(s)}</Tag> },
+        { title: 'Sisa', key: 'sisa', align: 'right', width: 140,  sorter: (a, b) => {
+    const sisaA = (a.totalTagihan ?? 0) - (a.jumlahTerbayar ?? 0);
+    const sisaB = (b.totalTagihan ?? 0) - (b.jumlahTerbayar ?? 0);
+    return sisaA - sisaB;
+  }, render: (_, r) => <span style={{ color: (r.totalTagihan - r.jumlahTerbayar) > 0 ? 'red' : 'green' }}>{formatCurrency(r.totalTagihan - r.jumlahTerbayar)}</span> },
+        { title: 'Status', dataIndex: 'statusPembayaran', width: 120, filters: [{ text: 'Belum', value: 'Belum' },  { text: 'Lunas', value: 'Lunas' }], filteredValue: selectedStatus.length ? selectedStatus : null, render: (s) => <Tag color={normalizeStatus(s) === 'Lunas' ? 'green' : normalizeStatus(s) === 'Belum' ? 'red' : 'orange'}>{normalizeStatus(s)}</Tag> },
         { title: 'Aksi', align: 'center', width: 80, render: renderAksi },
     ], [pagination, renderAksi, selectedStatus]);
 
@@ -305,10 +309,10 @@ export default function TransaksiJualPage() {
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     {/* BUTTON LAPORAN DENGAN LOADING ANIMATION */}
-                                    <Button 
-                                        icon={<PrinterOutlined />} 
-                                        onClick={handleGenerateReportPdf} 
-                                        disabled={!filteredTransaksi.length} 
+                                    <Button
+                                        icon={<PrinterOutlined />}
+                                        onClick={handleGenerateReportPdf}
+                                        disabled={!filteredTransaksi.length}
                                         loading={isTxPdfGenerating} // <-- ANIMASI LOADING DISINI
                                     >
                                         Laporan PDF
@@ -344,11 +348,11 @@ export default function TransaksiJualPage() {
                 <TransaksiJualDetailModal open={isDetailModalOpen} onCancel={handleCloseDetailModal} transaksi={selectedTransaksi} />
 
                 {/* MODAL PDF PREVIEW IMPORTED */}
-                <PdfPreviewModal 
-                    visible={isTxPdfModalOpen} 
-                    onClose={handleCloseTxPdfModal} 
-                    pdfBlobUrl={pdfPreviewUrl} 
-                    fileName={txPdfFileName} 
+                <PdfPreviewModal
+                    visible={isTxPdfModalOpen}
+                    onClose={handleCloseTxPdfModal}
+                    pdfBlobUrl={pdfPreviewUrl}
+                    fileName={txPdfFileName}
                 />
             </Content>
         </Layout>
