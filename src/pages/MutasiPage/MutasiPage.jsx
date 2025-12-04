@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import {
     PlusOutlined, EditOutlined, EyeOutlined, SyncOutlined, DownloadOutlined, ShareAltOutlined,
-    FilterOutlined, UnorderedListOutlined
+    FilterOutlined, UnorderedListOutlined, PrinterOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/id';
@@ -15,13 +15,14 @@ import { currencyFormatter } from '../../utils/formatters';
 import { KategoriPemasukan, KategoriPengeluaran } from '../../constants';
 import { useMutasiStream } from '../../hooks/useFirebaseData';
 import useDebounce from '../../hooks/useDebounce';
-// PASTIKAN IMPORT INI SESUAI LOKASI FILE PERTAMA TADI
 import { generateMutasiPdf } from '../../utils/pdfMutas'; 
-
+// IMPORT GENERATOR PDF INVOICE/NOTA
+import { generateNotaReturPDF } from '../../utils/notaretur';
+import { generateNotaPembayaranPDF } from '../../utils/notamutasipembayaran'; // Import dari file baru
 // COMPONENTS
 import RekapitulasiCard from './components/RekapitulasiCard';
 import KategoriChips from './components/KategoriChips';
-import TransaksiForm from './components/TransaksiForm';
+import MutasiForm from './components/MutasiForm';
 import PdfPreviewModal from '../BukuPage/components/PdfPreviewModal';
 
 dayjs.locale('id');
@@ -87,6 +88,7 @@ const MutasiPage = () => {
     const ExtendedKategoriPengeluaran = useMemo(() => ({ ...SafeKategoriPengeluaran, retur_buku: "Retur Buku" }), [SafeKategoriPengeluaran]);
 
     const getTimestamp = useCallback((r) => r?.tanggal || r?.tanggalBayar || 0, []);
+    
     // --- CALC BALANCE ---
     const balanceMap = useMemo(() => {
         const list = deferredMutasiList || [];
@@ -154,36 +156,104 @@ const MutasiPage = () => {
     const handleTambah = () => { setEditingTransaksi(null); setIsModalOpen(true); };
     const handleEdit = (r) => { setEditingTransaksi(r); setIsModalOpen(true); };
 
-    // --- PDF HANDLER (CRITICAL) ---
+    // --- PDF HANDLER (REKAP MUTASI) ---
     const handleGeneratePdf = () => {
-        console.log("Mencoba generate PDF...");
-        console.log("Jumlah Data:", filteredTransaksi.length);
-        console.log("Balance Map Size:", balanceMap.size);
-
         if (filteredTransaksi.length === 0) return message.warning('Data kosong');
-        
         try {
             message.loading({ content: 'Membuat PDF...', key: 'pdfGen' });
-            
             const { blobUrl, fileName } = generateMutasiPdf(
                 filteredTransaksi, 
-                { dateRange }, // Kirim object dateRange (Dayjs array)
+                { dateRange }, 
                 balanceMap, 
                 SafeKategoriPemasukan, 
                 ExtendedKategoriPengeluaran
             );
-            
-            console.log("PDF Berhasil dibuat:", fileName);
             setPdfPreviewUrl(blobUrl);
             setPdfFileName(fileName);
             setIsPreviewModalVisible(true);
             message.success({ content: 'PDF Siap', key: 'pdfGen' });
-
         } catch (e) {
             console.error("GAGAL GENERATE PDF:", e);
             message.error({ content: `Error: ${e.message}`, key: 'pdfGen' });
         }
     };
+
+    // --- PDF HANDLER (SINGLE TRANSAKSI - NOTA) ---
+   const handlePrintTransaction = (record) => {
+    try {
+        let pdfData = '';
+        let fileName = '';
+
+        // 1. Bersihkan Kategori (jaga-jaga ada spasi)
+        const kategori = record.kategori ? record.kategori.trim() : '';
+
+        // --- A. KATEGORI: PENJUALAN BUKU / PEMBAYARAN (PAKAI NOTA PEMBAYARAN) ---
+        if (kategori === 'Penjualan Buku' || kategori === 'Pembayaran' || kategori === 'Pembayaran Hutang') {
+            
+            // Format data agar cocok dengan Nota Pembayaran
+            const dataToPrint = {
+                ...record, // Copy semua data record
+                id: record.nomorDokumen || record.id || record.idTransaksi,
+                totalBayar: record.total || record.jumlah,
+                // Jika Penjualan Buku (Ringkas), buat list invoice manual
+                listInvoices: [{
+                    noInvoice: record.idTransaksi || '-',
+                    keterangan: record.keterangan || 'Transaksi Penjualan',
+                    jumlahBayar: record.total || record.jumlah
+                }]
+            };
+
+            pdfData = generateNotaPembayaranPDF(dataToPrint);
+            fileName = `Nota_Penjualan_${dataToPrint.id}.pdf`;
+
+        } 
+        // --- B. KATEGORI: RETUR BUKU (PAKAI NOTA RETUR) ---
+        else if (kategori === 'Retur Buku') {
+            
+            // PERBAIKAN UTAMA DISINI:
+            // Kita harus memaksa 'record.items' masuk ke 'itemsReturDetail'
+            // dan memastikan field 'judulBuku', 'qty', 'harga' terisi.
+            const itemsSiapCetak = (record.itemsReturDetail || []).map(item => ({
+                judulBuku: item.judulBuku || item.namaItem || item.nama || 'Item Buku', // Ambil judul dari berbagai kemungkinan key
+                qty: Number(item.qty || item.jumlah || item.quantity || 0),
+                harga: Number(item.harga || item.hargaSatuan || item.nominal || 0),
+                diskon: Number(item.diskon || item.potongan || 0)
+            }));
+
+            const dataToPrint = {
+                id: record.nomorDokumen || record.id,
+                idTransaksi: record.referensiDokumen || record.idTransaksi,
+                tanggal: record.tanggal,
+                namaPelanggan: record.namaPelanggan || 'Umum',
+                keterangan: record.keterangan,
+                
+                // Masukkan item yang sudah dirapikan di atas ke sini
+                itemsReturDetail: itemsSiapCetak, 
+                
+                totalDiskon: record.potongan || 0,
+                nilaiBarangRetur: record.total || record.jumlah
+            };
+
+            pdfData = generateNotaReturPDF(dataToPrint);
+            fileName = `Nota_Retur_${dataToPrint.id}.pdf`;
+        }
+
+        // --- EKSEKUSI BUKA MODAL ---
+        if (pdfData) {
+            setPdfPreviewUrl(pdfData);
+            setPdfFileName(fileName);
+            setIsPreviewModalVisible(true);
+        } else {
+            // Jika masuk sini, cek console browser untuk lihat kenapa kategori tidak terdeteksi
+            console.warn("Kategori tidak dikenali:", kategori);
+            message.warning(`Gagal membuat PDF. Kategori: ${kategori}`);
+        }
+
+    } catch (error) {
+        console.error("Gagal generate Nota PDF:", error);
+        message.error("Terjadi kesalahan sistem saat membuat PDF");
+    }
+};
 
     const handleClosePreviewModal = () => { setIsPreviewModalVisible(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); setPdfFileName(''); };
 
@@ -197,7 +267,40 @@ const MutasiPage = () => {
         { title: 'Jenis Transaksi', dataIndex: 'kategori', key: 'kategori', width: 200, render: (k, r) => { const katText = r.tipe === 'pemasukan' ? SafeKategoriPemasukan[k] || k : ExtendedKategoriPengeluaran[k] || k; return <Tag color={r.tipe === 'pemasukan' ? 'green' : 'red'} style={{ borderRadius: 8, fontSize: 11 }}>{katText || r.tipeMutasi}</Tag>; } },
         { title: 'Keterangan', dataIndex: 'keterangan', key: 'keterangan', render: (t) => <Text style={{ fontSize: 13 }}>{t}</Text> },
         { title: 'Nominal', dataIndex: 'jumlah', key: 'jumlah', align: 'right', width: 150, render: (v) => <Text strong type={v >= 0 ? 'success' : 'danger'}>{currencyFormatter(v)}</Text>, sorter: (a, b) => a.jumlah - b.jumlah },
-        { title: 'Aksi', key: 'aksi', align: 'center', width: 100, render: (_, r) => (<Space><Tooltip title="Lihat Bukti"><Button type="text" size="small" icon={<EyeOutlined />} onClick={() => handleViewProof(r.buktiUrl)} disabled={!r.buktiUrl} /></Tooltip><Tooltip title="Edit"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} /></Tooltip></Space>) },
+        { 
+            title: 'Aksi', 
+            key: 'aksi', 
+            align: 'center', 
+            width: 140, 
+            render: (_, r) => {
+                // Cek apakah item ini bisa diprint (Penjualan atau Retur)
+                const isPrintable = r.kategori === 'Penjualan Buku' || r.kategori === 'Retur Buku';
+                const printTooltip = r.kategori === 'Penjualan Buku' ? "Cetak Nota Penjualan Buku" : "Cetak Nota Retur";
+
+                return (
+                    <Space>
+                        {/* Tombol Print Khusus Penjualan/Retur */}
+                        {isPrintable && (
+                            <Tooltip title={printTooltip}>
+                                <Button 
+                                    type="text" 
+                                    size="small" 
+                                    icon={<PrinterOutlined />} 
+                                    onClick={() => handlePrintTransaction(r)} 
+                                    style={{ color: '#fa8c16' }} // Warna oranye
+                                />
+                            </Tooltip>
+                        )}
+                        <Tooltip title="Lihat Bukti">
+                            <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => handleViewProof(r.buktiUrl)} disabled={!r.buktiUrl} />
+                        </Tooltip>
+                        <Tooltip title="Edit">
+                            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} />
+                        </Tooltip>
+                    </Space>
+                );
+            } 
+        },
     ], [getTimestamp, SafeKategoriPemasukan, ExtendedKategoriPengeluaran]);
 
     const isFilterActive = filterType !== 'Semua' || selectedKategori.length > 0 || !!searchText || (!dateRange[0].isSame(defaultStart, 'day') || !dateRange[1].isSame(defaultEnd, 'day'));
@@ -251,7 +354,7 @@ const MutasiPage = () => {
                 </div>
             </Card>
 
-            {isModalOpen && (<TransaksiForm open={isModalOpen} onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }} initialValues={editingTransaksi} />)}
+            {isModalOpen && (<MutasiForm open={isModalOpen} onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }} initialValues={editingTransaksi} />)}
             <PdfPreviewModal visible={isPreviewModalVisible} onClose={handleClosePreviewModal} pdfBlobUrl={pdfPreviewUrl} fileName={pdfFileName} />
             <Modal open={isProofModalOpen} title="Bukti Transaksi" centered width={800} onCancel={() => setIsProofModalOpen(false)} footer={[<Button key="close" onClick={() => setIsProofModalOpen(false)} style={{ borderRadius: 8 }}>Tutup</Button>, navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={() => handleShareProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Share</Button>), <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => handleDownloadProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Download</Button>]}>{isProofLoading && <div style={{textAlign: 'center', padding: 20}}><Spin /></div>}{viewingProofUrl && (<div style={{ background: '#f0f2f5', borderRadius: 8, padding: 4, minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{viewingProofUrl.toLowerCase().includes('.pdf') ? (<iframe src={viewingProofUrl} style={{ width: '100%', height: '60vh', border: 'none', display: isProofLoading ? 'none' : 'block' }} title="Bukti PDF" onLoad={() => setIsProofLoading(false)} />) : (<img alt="Bukti Transaksi" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: isProofLoading ? 'none' : 'block' }} src={viewingProofUrl} onLoad={() => setIsProofLoading(false)} />)}</div>)}</Modal>
         </Content>
