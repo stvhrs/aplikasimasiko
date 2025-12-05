@@ -19,6 +19,9 @@ import MutasiPage from './pages/MutasiPage/MutasiPage';
 import TransaksiJualPage from './pages/TransaksiJualPage/TransaksiJualPage';
 // import DataGeneratorPage from './pages/DataGeneratorPage'; // Hapus jika tidak dipakai
 import PelangganPage from './pages/PelangganPage/PelangganPage';
+// import PelangganPage from './pages/PelangganPage/PelangganPage';
+import ReturPage from './pages/PembayaranPage copy/ReturPage';
+
 // import JsonUploader from './pages/excel'; // Hapus jika tidak dipakai
 // import DataGeneratorTransaksiJual from './pages/data'; // Hapus jika tidak dipakai
 import LoginPage from './pages/LoginPage/LoginPage';
@@ -33,6 +36,7 @@ import GBukuPage from './pages/GBukuPage'; // Contoh path
 import GMutasiPage from './pages/GMutasiPage'; // Contoh path
 import GJualPage from './pages/GJualPage'; // Contoh path
 import GenerateBukuChart from './pages/generatedatachartbuku';
+import PembayaranPage from './pages/PembayaranPage/PembayaranPage';
 
 
 // Komponen MainLayout (Add Logout Button)
@@ -68,9 +72,8 @@ const MainLayout = () => {
          if (path.startsWith('/transaksi-jual')) return '/transaksi-jual';
          if (path.startsWith('/pelanggan')) return '/pelanggan';
          // Rute baru
-         if (path.startsWith('/gbuku')) return '/gbuku';
-         if (path.startsWith('/gmutasi')) return '/gmutasi';
-         if (path.startsWith('/gjual')) return '/gjual';
+            if (path.startsWith('/pembayaran')) return '/pembayaran';
+            if (path.startsWith('/retur')) return '/retur';
          // Rute lama dihapus
          // if (path.startsWith('/json')) return '/json';
          // if (path.startsWith('/mutasi2')) return '/mutasi2';
@@ -129,12 +132,12 @@ const MainLayout = () => {
                       <Route path="/mutasi" element={<MutasiPage/>} />
                       <Route path="/transaksi-jual" element={<TransaksiJualPage />} />
                       <Route path="/pelanggan" element={<PelangganPage />} />
-                      {/* Rute Baru */}
-                      <Route path="/gbuku" element={<GBukuPage />} />
-                      <Route path="/gmutasi" element={<GMutasiPage />} />
-                      <Route path="/gjual" element={<GJualPage />} />
-                      <Route path="/chart" element={<GenerateBukuChart />} />
+                      <Route path="/pembayaran" element={<PembayaranPage />} />
+                      <Route path="/retur" element={<ReturPage />} />
 
+
+                      {/* Rute Baru */}
+                   
                       {/* Rute Lama Dihapus */}
                       {/* <Route path="/json" element={<JsonUploader />} /> */}
                       {/* <Route path="/mutasi2" element={<DataGeneratorPage />} /> */}

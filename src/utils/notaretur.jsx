@@ -92,7 +92,7 @@ const buildDoc = (data) => {
 
             return [
                 i + 1,
-                item.judulBuku || item.idBuku,
+                item.judul || item.idBuku,
                 qty,
                 formatCurrency(harga),
                 formatCurrency(sub)

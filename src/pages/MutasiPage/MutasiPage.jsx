@@ -65,7 +65,7 @@ const MutasiPage = () => {
 
     // --- MODALS ---
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingTransaksi, setEditingTransaksi] = useState(null);
+    const [editingMutasi, setEditingMutasi] = useState(null);
     const [isProofModalOpen, setIsProofModalOpen] = useState(false);
     const [viewingProofUrl, setViewingProofUrl] = useState('');
     const [isProofLoading, setIsProofLoading] = useState(false);
@@ -104,7 +104,7 @@ const MutasiPage = () => {
     }, [deferredMutasiList, getTimestamp]);
 
     // --- FILTER LOGIC ---
-    const filteredTransaksi = useMemo(() => {
+    const filteredMutasi = useMemo(() => {
         let data = deferredMutasiList || [];
         if (deferredFilterType !== 'Semua') {
             const dbType = deferredFilterType === 'Masuk' ? 'pemasukan' : 'pengeluaran';
@@ -122,7 +122,7 @@ const MutasiPage = () => {
 
     // --- REKAP DATA ---
     const rekapDataForCard = useMemo(() => {
-        const data = filteredTransaksi;
+        const data = filteredMutasi;
         let inTotal = 0; let outTotal = 0;
         const inMap = new Map(); Object.values(SafeKategoriPemasukan).forEach(c => inMap.set(c, 0));
         const outMap = new Map(); Object.values(ExtendedKategoriPengeluaran).forEach(c => outMap.set(c, 0));
@@ -143,7 +143,7 @@ const MutasiPage = () => {
             pengeluaranEntries: Array.from(outMap.entries()).sort((a, b) => b[1] - a[1]), 
             totalPemasukan: inTotal, totalPengeluaran: outTotal 
         };
-    }, [filteredTransaksi, SafeKategoriPemasukan, ExtendedKategoriPengeluaran]);
+    }, [filteredMutasi, SafeKategoriPemasukan, ExtendedKategoriPengeluaran]);
 
     // --- HANDLERS ---
     const handleSearchChange = (e) => { setSearchText(e.target.value); setPagination(p => ({ ...p, current: 1 })); };
@@ -153,16 +153,16 @@ const MutasiPage = () => {
     const resetFilters = useCallback(() => { setFilterType('Semua'); setSelectedKategori([]); setSearchText(''); setDateRange([defaultStart, defaultEnd]); setPagination(p => ({ ...p, current: 1 })); }, [defaultStart, defaultEnd]);
     
     const handleViewProof = (url) => { setIsProofLoading(true); setViewingProofUrl(url); setIsProofModalOpen(true); };
-    const handleTambah = () => { setEditingTransaksi(null); setIsModalOpen(true); };
-    const handleEdit = (r) => { setEditingTransaksi(r); setIsModalOpen(true); };
+    const handleTambah = () => { setEditingMutasi(null); setIsModalOpen(true); };
+    const handleEdit = (r) => { setEditingMutasi(r); setIsModalOpen(true); };
 
     // --- PDF HANDLER (REKAP MUTASI) ---
     const handleGeneratePdf = () => {
-        if (filteredTransaksi.length === 0) return message.warning('Data kosong');
+        if (filteredMutasi.length === 0) return message.warning('Data kosong');
         try {
             message.loading({ content: 'Membuat PDF...', key: 'pdfGen' });
             const { blobUrl, fileName } = generateMutasiPdf(
-                filteredTransaksi, 
+                filteredMutasi, 
                 { dateRange }, 
                 balanceMap, 
                 SafeKategoriPemasukan, 
@@ -193,12 +193,12 @@ const MutasiPage = () => {
             // Format data agar cocok dengan Nota Pembayaran
             const dataToPrint = {
                 ...record, // Copy semua data record
-                id: record.nomorDokumen || record.id || record.idTransaksi,
+                id: record.nomorDokumen || record.id || record.idMutasi,
                 totalBayar: record.total || record.jumlah,
                 // Jika Penjualan Buku (Ringkas), buat list invoice manual
                 listInvoices: [{
-                    noInvoice: record.idTransaksi || '-',
-                    keterangan: record.keterangan || 'Transaksi Penjualan',
+                    noInvoice: record.idMutasi || '-',
+                    keterangan: record.keterangan || 'Mutasi Penjualan',
                     jumlahBayar: record.total || record.jumlah
                 }]
             };
@@ -214,7 +214,7 @@ const MutasiPage = () => {
             // Kita harus memaksa 'record.items' masuk ke 'itemsReturDetail'
             // dan memastikan field 'judulBuku', 'qty', 'harga' terisi.
             const itemsSiapCetak = (record.itemsReturDetail || []).map(item => ({
-                judulBuku: item.judulBuku || item.namaItem || item.nama || 'Item Buku', // Ambil judul dari berbagai kemungkinan key
+                judulBuku: item.judulBuku ,// Ambil judul dari berbagai kemungkinan key
                 qty: Number(item.qty || item.jumlah || item.quantity || 0),
                 harga: Number(item.harga || item.hargaSatuan || item.nominal || 0),
                 diskon: Number(item.diskon || item.potongan || 0)
@@ -222,7 +222,7 @@ const MutasiPage = () => {
 
             const dataToPrint = {
                 id: record.nomorDokumen || record.id,
-                idTransaksi: record.referensiDokumen || record.idTransaksi,
+                idMutasi: record.referensiDokumen || record.idMutasi,
                 tanggal: record.tanggal,
                 namaPelanggan: record.namaPelanggan || 'Umum',
                 keterangan: record.keterangan,
@@ -262,35 +262,60 @@ const MutasiPage = () => {
     const handleShareProof = async (url) => { if (navigator.share) { try { const r = await fetch(url); const b = await r.blob(); const f = new File([b], "bukti.jpg", { type: b.type }); await navigator.share({ files: [f], title: 'Bukti' }); } catch (e) { message.error('Gagal share'); } } else message.warning('Tidak support'); };
 
     // --- COLUMNS ---
+  // --- COLUMNS ---
     const columns = useMemo(() => [
-        { title: "Tanggal", dataIndex: 'tanggal', key: 'tanggal', width: 140, render: (tgl, r) => <div>{dayjs(getTimestamp(r)).format('DD MMM YYYY')}</div>, sorter: (a, b) => getTimestamp(a) - getTimestamp(b), defaultSortOrder: 'descend' },
-        { title: 'Jenis Transaksi', dataIndex: 'kategori', key: 'kategori', width: 200, render: (k, r) => { const katText = r.tipe === 'pemasukan' ? SafeKategoriPemasukan[k] || k : ExtendedKategoriPengeluaran[k] || k; return <Tag color={r.tipe === 'pemasukan' ? 'green' : 'red'} style={{ borderRadius: 8, fontSize: 11 }}>{katText || r.tipeMutasi}</Tag>; } },
-        { title: 'Keterangan', dataIndex: 'keterangan', key: 'keterangan', render: (t) => <Text style={{ fontSize: 13 }}>{t}</Text> },
-        { title: 'Nominal', dataIndex: 'jumlah', key: 'jumlah', align: 'right', width: 150, render: (v) => <Text strong type={v >= 0 ? 'success' : 'danger'}>{currencyFormatter(v)}</Text>, sorter: (a, b) => a.jumlah - b.jumlah },
+        { 
+            title: "Tanggal", 
+            dataIndex: 'tanggal', 
+            key: 'tanggal', 
+            width: 140, 
+            render: (tgl, r) => <div>{dayjs(getTimestamp(r)).format('DD MMM YYYY')}</div>, 
+            sorter: (a, b) => getTimestamp(a) - getTimestamp(b), 
+            defaultSortOrder: 'descend' 
+        },
+        { 
+            title: 'Jenis Mutasi', 
+            dataIndex: 'kategori', 
+            key: 'kategori', 
+            width: 200, 
+            render: (k, r) => { 
+                const katText = r.tipe === 'pemasukan' ? SafeKategoriPemasukan[k] || k : ExtendedKategoriPengeluaran[k] || k; 
+                return <Tag color={r.tipe === 'pemasukan' ? 'green' : 'red'} style={{ borderRadius: 8, fontSize: 11 }}>{katText || r.tipeMutasi}</Tag>; 
+            } 
+        },
+        { 
+            title: 'Keterangan', 
+            dataIndex: 'keterangan', 
+            key: 'keterangan', 
+            render: (t) => <Text style={{ fontSize: 13 }}>{t}</Text> 
+        },
+        { 
+            title: 'Nominal', 
+            dataIndex: 'jumlah', 
+            key: 'jumlah', 
+            align: 'right', 
+            width: 150, 
+            render: (v) => <Text strong type={v >= 0 ? 'success' : 'danger'}>{currencyFormatter(v)}</Text>, 
+            sorter: (a, b) => a.jumlah - b.jumlah 
+        },
         { 
             title: 'Aksi', 
             key: 'aksi', 
             align: 'center', 
             width: 140, 
             render: (_, r) => {
-                // Cek apakah item ini bisa diprint (Penjualan atau Retur)
-                const isPrintable = r.kategori === 'Penjualan Buku' || r.kategori === 'Retur Buku';
-                const printTooltip = r.kategori === 'Penjualan Buku' ? "Cetak Nota Penjualan Buku" : "Cetak Nota Retur";
+                // LOGIKA BARU:
+                // Cek apakah kategori adalah Penjualan Buku atau Retur Buku
+                const isRestricted = r.kategori === 'Penjualan Buku' || r.kategori === 'Retur Buku';
 
+                // Jika restricted, hilangkan tombol aksi (return null)
+                if (isRestricted) {
+                    return null; 
+                }
+
+                // Jika BUKAN kategori tersebut, tampilkan tombol standar (Lihat Bukti & Edit)
                 return (
                     <Space>
-                        {/* Tombol Print Khusus Penjualan/Retur */}
-                        {isPrintable && (
-                            <Tooltip title={printTooltip}>
-                                <Button 
-                                    type="text" 
-                                    size="small" 
-                                    icon={<PrinterOutlined />} 
-                                    onClick={() => handlePrintTransaction(r)} 
-                                    style={{ color: '#fa8c16' }} // Warna oranye
-                                />
-                            </Tooltip>
-                        )}
                         <Tooltip title="Lihat Bukti">
                             <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => handleViewProof(r.buktiUrl)} disabled={!r.buktiUrl} />
                         </Tooltip>
@@ -302,7 +327,6 @@ const MutasiPage = () => {
             } 
         },
     ], [getTimestamp, SafeKategoriPemasukan, ExtendedKategoriPengeluaran]);
-
     const isFilterActive = filterType !== 'Semua' || selectedKategori.length > 0 || !!searchText || (!dateRange[0].isSame(defaultStart, 'day') || !dateRange[1].isSame(defaultEnd, 'day'));
 
     return (
@@ -311,7 +335,7 @@ const MutasiPage = () => {
                 <Col xs={24} lg={13} style={{ display: 'flex', flexDirection: 'column' }}>
                     <Card style={styles.card} bodyStyle={{ padding: 0 }}>
                         <div style={styles.headerCompact}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}><div style={styles.iconBox('#1890ff', '#e6f7ff')}><FilterOutlined /></div><Text style={styles.headerTitle}>Filter Transaksi</Text></div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}><div style={styles.iconBox('#1890ff', '#e6f7ff')}><FilterOutlined /></div><Text style={styles.headerTitle}>Filter Mutasi</Text></div>
                             {isFilterActive && (<Button type="text" size="small" icon={<SyncOutlined />} onClick={resetFilters} style={{ color: '#8c8c8c', fontSize: 12 }}>Reset</Button>)}
                         </div>
                         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -336,12 +360,12 @@ const MutasiPage = () => {
 
             <Card style={styles.card} bodyStyle={{ padding: 0 }}> 
                 <div style={styles.headerCompact}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}><div style={styles.iconBox('#fa8c16', '#fff7e6')}><UnorderedListOutlined /></div><Text style={styles.headerTitle}>Riwayat Transaksi</Text></div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}><div style={styles.iconBox('#fa8c16', '#fff7e6')}><UnorderedListOutlined /></div><Text style={styles.headerTitle}>Riwayat Mutasi</Text></div>
                     <Space>
                         <Tooltip title="Download Laporan PDF"> <Button
       icon={<DownloadOutlined />}
       onClick={handleGeneratePdf}
-      disabled={filteredTransaksi.length === 0}
+      disabled={filteredMutasi.length === 0}
       style={{ borderRadius: 8 }}
     >
       Download
@@ -350,13 +374,13 @@ const MutasiPage = () => {
                     </Space>
                 </div>
                 <div style={{ padding: '0 16px 16px 16px' }}>
-                    <Table columns={columns} dataSource={filteredTransaksi} loading={loadingMutasi} rowKey="id" size="middle" scroll={{ x: 'max-content' }} pagination={{ ...pagination, size: 'small', showTotal: (t) => <Text type="secondary" style={{ fontSize: 12 }}>Total {t}</Text> }} onChange={handleTableChange} rowClassName={getRowClassName} />
+                    <Table columns={columns} dataSource={filteredMutasi} loading={loadingMutasi} rowKey="id" size="middle" scroll={{ x: 'max-content' }} pagination={{ ...pagination, size: 'small', showTotal: (t) => <Text type="secondary" style={{ fontSize: 12 }}>Total {t}</Text> }} onChange={handleTableChange} rowClassName={getRowClassName} />
                 </div>
             </Card>
 
-            {isModalOpen && (<MutasiForm open={isModalOpen} onCancel={() => { setIsModalOpen(false); setEditingTransaksi(null); }} initialValues={editingTransaksi} />)}
+            {isModalOpen && (<MutasiForm open={isModalOpen} onCancel={() => { setIsModalOpen(false); setEditingMutasi(null); }} initialValues={editingMutasi} />)}
             <PdfPreviewModal visible={isPreviewModalVisible} onClose={handleClosePreviewModal} pdfBlobUrl={pdfPreviewUrl} fileName={pdfFileName} />
-            <Modal open={isProofModalOpen} title="Bukti Transaksi" centered width={800} onCancel={() => setIsProofModalOpen(false)} footer={[<Button key="close" onClick={() => setIsProofModalOpen(false)} style={{ borderRadius: 8 }}>Tutup</Button>, navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={() => handleShareProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Share</Button>), <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => handleDownloadProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Download</Button>]}>{isProofLoading && <div style={{textAlign: 'center', padding: 20}}><Spin /></div>}{viewingProofUrl && (<div style={{ background: '#f0f2f5', borderRadius: 8, padding: 4, minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{viewingProofUrl.toLowerCase().includes('.pdf') ? (<iframe src={viewingProofUrl} style={{ width: '100%', height: '60vh', border: 'none', display: isProofLoading ? 'none' : 'block' }} title="Bukti PDF" onLoad={() => setIsProofLoading(false)} />) : (<img alt="Bukti Transaksi" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: isProofLoading ? 'none' : 'block' }} src={viewingProofUrl} onLoad={() => setIsProofLoading(false)} />)}</div>)}</Modal>
+            <Modal open={isProofModalOpen} title="Bukti Mutasi" centered width={800} onCancel={() => setIsProofModalOpen(false)} footer={[<Button key="close" onClick={() => setIsProofModalOpen(false)} style={{ borderRadius: 8 }}>Tutup</Button>, navigator.share && (<Button key="share" icon={<ShareAltOutlined />} onClick={() => handleShareProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Share</Button>), <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => handleDownloadProof(viewingProofUrl)} style={{ borderRadius: 8 }}>Download</Button>]}>{isProofLoading && <div style={{textAlign: 'center', padding: 20}}><Spin /></div>}{viewingProofUrl && (<div style={{ background: '#f0f2f5', borderRadius: 8, padding: 4, minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{viewingProofUrl.toLowerCase().includes('.pdf') ? (<iframe src={viewingProofUrl} style={{ width: '100%', height: '60vh', border: 'none', display: isProofLoading ? 'none' : 'block' }} title="Bukti PDF" onLoad={() => setIsProofLoading(false)} />) : (<img alt="Bukti Mutasi" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', display: isProofLoading ? 'none' : 'block' }} src={viewingProofUrl} onLoad={() => setIsProofLoading(false)} />)}</div>)}</Modal>
         </Content>
     );
 };

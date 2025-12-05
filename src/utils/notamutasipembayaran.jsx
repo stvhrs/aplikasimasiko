@@ -43,7 +43,6 @@ const buildDoc = (data) => {
 
     // --- 2. INFO TRANSAKSI ---
     const idDokumen = data.id || '-';
-    // Gunakan namaPelanggan langsung dari data object
     const namaPelanggan = data.namaPelanggan || 'Umum';
 
     const infoX = pageWidth / 2 + 10;
@@ -64,7 +63,6 @@ const buildDoc = (data) => {
     doc.setFont('helvetica', 'bold'); doc.text('Tanggal:', infoX, rightY);
     doc.setFont('helvetica', 'normal'); doc.text(formatDate(data.tanggal), infoX + 25, rightY);
     
-    // Jika ada info metode pembayaran
     if (data.metodeBayar) {
         doc.setFont('helvetica', 'bold'); doc.text('Metode:', infoX, rightY + 5);
         doc.setFont('helvetica', 'normal'); doc.text(data.metodeBayar, infoX + 25, rightY + 5);
@@ -73,25 +71,28 @@ const buildDoc = (data) => {
     currentY += 10;
 
     // --- 3. TABEL LIST INVOICE YANG DIBAYARKAN ---
-    // Struktur Kolom: No | No. Invoice | Catatan/Keterangan Invoice | Nominal Dibayar
     const head = [['No', 'No. Invoice', 'Keterangan', 'Jumlah Bayar']];
     let body = [];
 
-    // Mengambil data dari 'listInvoices' (sesuaikan key ini dengan data inputmu)
     if (data.listInvoices && Array.isArray(data.listInvoices) && data.listInvoices.length > 0) {
             body = data.listInvoices.map((inv, i) => {
             const amount = Number(inv.jumlahBayar || inv.amount || 0);
 
+            // --- PERBAIKAN DI SINI ---
+            // Logika: Cek keterangan item dulu -> Cek keterangan global (data.keterangan) -> baru strip
+            const noteToShow = inv.keterangan || data.keterangan || '-';
+
             return [
                 i + 1,
-                inv.noInvoice || inv.idInvoice || '-',       // Nomor Invoice
-                inv.keterangan || '-',                       // Catatan per invoice (misal: Cicilan 1)
-                formatCurrency(amount)                       // Nominal
+                inv.noInvoice || inv.idInvoice || '-',      
+                noteToShow,                                  // Menggunakan logic fallback baru
+                formatCurrency(amount)                       
             ];
             });
     } else {
-        // Fallback jika data kosong
-        body = [['-', '-', 'Tidak ada data invoice', formatCurrency(0)]];
+        // Jika list kosong, tapi ada keterangan global, tampilkan di baris dummy
+        const noteGlobal = data.keterangan || 'Pembayaran tanpa detail invoice';
+        body = [['1', '-', noteGlobal, formatCurrency(data.totalBayar || data.jumlah || 0)]];
     }
 
     // Render Table
@@ -105,7 +106,7 @@ const buildDoc = (data) => {
         columnStyles: { 
             0: { halign: 'center', cellWidth: 10 }, 
             1: { cellWidth: 50 }, 
-            3: { halign: 'right', cellWidth: 40 }   // Jumlah Bayar Rata Kanan
+            3: { halign: 'right', cellWidth: 40 } 
         }
     });
 
@@ -113,7 +114,6 @@ const buildDoc = (data) => {
     currentY = doc.lastAutoTable.finalY + 5;
     const rightX = pageWidth - margin.right;
     
-    // Total Pembayaran (Bisa dari summary data atau hitung ulang dari item)
     const totalBayar = Number(data.totalBayar || data.jumlah || 0);
 
     const summaryData = [
@@ -131,15 +131,16 @@ const buildDoc = (data) => {
     // --- 5. FOOTER KETERANGAN ---
     const footerY = doc.internal.pageSize.getHeight() - margin.bottom;
     
-    // Keterangan Global (Catatan Pembayaran)
-    if (data.keterangan) {
-        doc.setFontSize(8); doc.setFont('helvetica', 'italic');
-        doc.text(`Catatan: ${data.keterangan}`, margin.left, footerY - 10);
-    }
+    // (Opsional) Jika Anda tidak ingin keterangan muncul double (di tabel + di footer),
+    // Anda bisa menghapus bagian ini, atau biarkan saja sebagai catatan tambahan.
+    // if (data.keterangan) {
+    //     doc.setFontSize(8); doc.setFont('helvetica', 'italic');
+    //     doc.text(`Catatan: ${data.keterangan}`, margin.left, footerY - 10);
+    // }
     
     doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-    doc.text(terms[0], margin.left, footerY);
-    doc.text(terms[1], margin.left, footerY + 4);
+    // doc.text(terms[0], margin.left, footerY);
+    // doc.text(terms[1], margin.left, footerY + 4);
 
     return doc;
 };

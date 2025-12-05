@@ -1,17 +1,200 @@
-import { useEffect, useState } from "react";
-import { get, ref, onValue, query, orderByChild, startAt, endAt, equalTo, limitToLast, limitToFirst, off } from "firebase/database";
+import { useState, useEffect } from 'react';
 import { db } from '../api/firebase'; 
-import dayjs from "dayjs";
+import { 
+    ref, query, orderByChild, startAt, endAt, onValue 
+} from "firebase/database";
+import dayjs from 'dayjs';
 
-// --- Helper ---
-const snapshotToArrayWithId = (snapshot) => {
-    const val = snapshot.val();
-    if (!val) return [];
-    return Object.keys(val).map(key => ({ id: key, ...val[key] }));
+// --- SINGLETON STATE (Variable di luar Hook) ---
+// Data ini akan tetap hidup di memori selama aplikasi tidak di-refresh browser-nya.
+
+// Store Pembayaran
+let globalPembayaran = {
+    data: [],
+    loading: false,
+    unsubscribe: null,
+    rangeKey: null // Untuk mengecek apakah filter tanggal berubah
 };
 
+// Store Retur
+let globalRetur = {
+    data: [],
+    loading: false,
+    unsubscribe: null,
+    rangeKey: null
+};
+
+// --- HOOK PEMBAYARAN ---
+export const usePembayaranStream = (dateRange) => {
+    // State lokal untuk memicu re-render komponen
+    const [data, setData] = useState(globalPembayaran.data);
+    const [loading, setLoading] = useState(globalPembayaran.loading || (globalPembayaran.data.length === 0));
+
+    useEffect(() => {
+        // Buat key unik dari tanggal untuk cek perubahan filter
+        const start = dateRange ? dayjs(dateRange[0]).format('YYYY-MM-DD') : 'start';
+        const end = dateRange ? dayjs(dateRange[1]).format('YYYY-MM-DD') : 'end';
+        const currentRangeKey = `${start}_${end}`;
+
+        // LOGIKA SINGLETON:
+        // Jika stream sudah ada DAN range tanggalnya sama, JANGAN reload.
+        if (globalPembayaran.unsubscribe && globalPembayaran.rangeKey === currentRangeKey) {
+            setData(globalPembayaran.data);
+            setLoading(false);
+            
+            // Kita tetap perlu listener dummy atau cara untuk update state lokal jika ada data baru masuk
+            // Tapi karena onValue di bawah mengupdate variabel global, kita perlu attach listener baru? 
+            // TIDAK. Di React, kita harus setup listener baru yang mengupdate state lokal ini.
+            
+            // KOREKSI: Karena onValue hanya jalan sekali di singleton, kita harus menimpa callback-nya 
+            // atau membuat mekanisme observer. 
+            // Cara termudah & teraman tanpa over-engineering: 
+            // Kita RESTART stream HANYA jika tanggal berubah. Jika tanggal sama, kita biarkan stream lama jalan
+            // TAPI kita harus bisa menangkap update-nya ke state lokal component ini.
+            
+            // Solusi Hybrid: 
+            // Kita matikan stream lama jika range berubah, lalu buat baru.
+        }
+
+        // Jika range berubah ATAU belum ada stream, buat baru.
+        if (globalPembayaran.rangeKey !== currentRangeKey || !globalPembayaran.unsubscribe) {
+            
+            // 1. Cleanup stream lama jika ada
+            if (globalPembayaran.unsubscribe) {
+                globalPembayaran.unsubscribe();
+            }
+
+            setLoading(true);
+            globalPembayaran.loading = true;
+            globalPembayaran.rangeKey = currentRangeKey;
+
+            const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
+            const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
+
+            const q = query(
+                ref(db, 'historiPembayaran'), 
+                orderByChild('tanggal'), 
+                startAt(startDate), 
+                endAt(endDate)
+            );
+
+            // 2. Setup Stream Baru
+            globalPembayaran.unsubscribe = onValue(q, (snapshot) => {
+                const list = [];
+                if (snapshot.exists()) {
+                    snapshot.forEach((child) => {
+                        list.push({ id: child.key, ...child.val() });
+                    });
+                }
+                list.reverse(); // Terbaru diatas
+
+                // Update Global Singleton
+                globalPembayaran.data = list;
+                globalPembayaran.loading = false;
+
+                // Update Lokal State (agar UI berubah)
+                setData(list);
+                setLoading(false);
+            });
+        } else {
+            // Jika Stream sudah ada & Range SAMA, kita perlu "Hook" ke update stream tsb.
+            // Sayangnya Firebase onValue callback terikat scope lama.
+            // Trik Singleton React: Kita reset onValue dengan callback yang membungkus setData INI.
+            
+            // Agar aman dan simple: Kita biarkan logic di atas me-restart stream jika range beda.
+            // TAPI jika range sama, kita attach ulang onValue agar setData component aktif ini yang dipanggil.
+            // (Ini cost-nya murah karena data di cache firebase SDK sudah ada).
+            
+            // NAMUN, permintaan Anda adalah "Tidak Reload". 
+            // Maka kita pakai data global dulu sebagai initial state (sudah di useState di atas).
+            
+            // Kita timpa listener lama dengan listener baru yang mengarah ke komponen aktif ini
+             const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
+             const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
+             const q = query(ref(db, 'historiPembayaran'), orderByChild('tanggal'), startAt(startDate), endAt(endDate));
+             
+             // Matikan yang lama (yang mengarah ke component yang sudah unmount)
+             if(globalPembayaran.unsubscribe) globalPembayaran.unsubscribe();
+
+             // Hidupkan yang baru mengarah ke component ini
+             globalPembayaran.unsubscribe = onValue(q, (snapshot) => {
+                 const list = [];
+                 if (snapshot.exists()) {
+                     snapshot.forEach((child) => {
+                         list.push({ id: child.key, ...child.val() });
+                     });
+                 }
+                 list.reverse();
+                 globalPembayaran.data = list;
+                 setData(list); // Update UI
+             });
+        }
+
+        // Cleanup: Saat unmount, KITA TIDAK MATIKAN STREAM DATABASE (globalPembayaran.unsubscribe).
+        // Kita biarkan menggantung agar saat balik lagi datanya instan.
+        // HANYA matikan jika range tanggal berubah di effect selanjutnya.
+        
+    }, [dateRange]);
+
+    return { pembayaranList: data, loadingPembayaran: loading };
+};
+
+
+// --- HOOK RETUR (Pola Sama) ---
+export const useReturStream = (dateRange) => {
+    const [data, setData] = useState(globalRetur.data);
+    const [loading, setLoading] = useState(globalRetur.loading || (globalRetur.data.length === 0));
+
+    useEffect(() => {
+        const start = dateRange ? dayjs(dateRange[0]).format('YYYY-MM-DD') : 'start';
+        const end = dateRange ? dayjs(dateRange[1]).format('YYYY-MM-DD') : 'end';
+        const currentRangeKey = `${start}_${end}`;
+
+        // Cek apakah perlu restart stream (karena range beda) atau refresh listener (range sama)
+        if (globalRetur.rangeKey !== currentRangeKey) {
+            setLoading(true);
+            globalRetur.loading = true;
+            globalRetur.data = []; // Reset data visual saat ganti tanggal
+            setData([]); 
+        }
+
+        // Logic Query
+        const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
+        const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
+        const q = query(ref(db, 'historiRetur'), orderByChild('timestamp'), startAt(startDate), endAt(endDate));
+
+        // Matikan listener "hantu" dari page sebelumnya
+        if (globalRetur.unsubscribe) globalRetur.unsubscribe();
+
+        // Start Listener Baru (langsung ambil cache jika ada)
+        globalRetur.unsubscribe = onValue(q, (snapshot) => {
+            const list = [];
+            if (snapshot.exists()) {
+                snapshot.forEach((child) => {
+                    list.push({ id: child.key, ...child.val() });
+                });
+            }
+            list.reverse(); // Terbaru diatas
+            
+            globalRetur.data = list;
+            globalRetur.loading = false;
+            globalRetur.rangeKey = currentRangeKey;
+
+            setData(list);
+            setLoading(false);
+        });
+
+    }, [dateRange]);
+
+    return { returList: data, loadingRetur: loading };
+};
 // ============================================================================
-// 1. BUKU STREAM (GLOBAL CACHE - ANTI RELOAD)
+// 2. USE RETUR STREAM (Simple Stream)
+// ============================================================================
+
+
+// ============================================================================
+// 3. BUKU STREAM (GLOBAL CACHE - ANTI RELOAD)
 // ============================================================================
 let globalBukuData = [];
 let globalBukuLoading = true;
@@ -24,7 +207,6 @@ const notifyBukuSubscribers = () => {
 
 const connectBukuStream = () => {
     if (globalBukuUnsubscribe) {
-        // console.log("%c📘 [BUKU] Using Existing Stream (No Reload)", "color: blue; background: #e6f7ff; padding: 2px 5px; border-radius: 3px;");
         notifyBukuSubscribers();
         return;
     }
@@ -36,12 +218,12 @@ const connectBukuStream = () => {
     const bukuRef = ref(db, 'buku');
 
     globalBukuUnsubscribe = onValue(bukuRef, (snapshot) => {
-        const formattedData = snapshotToArrayWithId(snapshot);
-        formattedData.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        const data = snapshotToArrayWithId(snapshot);
+        data.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
         
-        console.log(`%c📘 [BUKU] Data Incoming: ${formattedData.length} items`, "color: blue");
+        console.log(`%c📘 [BUKU] Data Incoming: ${data.length} items`, "color: blue");
         
-        globalBukuData = formattedData;
+        globalBukuData = data;
         globalBukuLoading = false;
         notifyBukuSubscribers();
     }, (error) => {
@@ -65,14 +247,18 @@ export const useBukuStream = () => {
     return { bukuList: data, loadingBuku: loading };
 };
 
-
 // ============================================================================
-// 2. PELANGGAN STREAM (GLOBAL CACHE - ANTI RELOAD)
+// 4. PELANGGAN STREAM (GLOBAL CACHE - ANTI RELOAD)
 // ============================================================================
 let globalPelangganData = [];
 let globalPelangganLoading = true;
 let globalPelangganUnsubscribe = null;
 const pelangganSubscribers = new Set();
+const snapshotToArrayWithId = (snapshot) => {
+    const val = snapshot.val();
+    if (!val) return [];
+    return Object.keys(val).map(key => ({ id: key, ...val[key] }));
+};
 
 const notifyPelangganSubscribers = () => {
     pelangganSubscribers.forEach(cb => cb(globalPelangganData, globalPelangganLoading));
@@ -80,7 +266,6 @@ const notifyPelangganSubscribers = () => {
 
 const connectPelangganStream = () => {
     if (globalPelangganUnsubscribe) {
-        // console.log("%c👥 [PELANGGAN] Using Existing Stream (No Reload)", "color: #00BCD4; background: #E0F7FA; padding: 2px 5px; border-radius: 3px;");
         notifyPelangganSubscribers();
         return;
     }
@@ -92,12 +277,13 @@ const connectPelangganStream = () => {
     const pelangganRef = ref(db, 'pelanggan');
 
     globalPelangganUnsubscribe = onValue(pelangganRef, (snapshot) => {
-        const formattedData = snapshotToArrayWithId(snapshot);
-        formattedData.sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+        const data = snapshotToArrayWithId(snapshot);
+        // Sort Ascending by Nama
+        data.sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
         
-        console.log(`%c👥 [PELANGGAN] Data Incoming: ${formattedData.length} items`, "color: #00BCD4");
+        console.log(`%c👥 [PELANGGAN] Data Incoming: ${data.length} items`, "color: #00BCD4");
         
-        globalPelangganData = formattedData;
+        globalPelangganData = data;
         globalPelangganLoading = false;
         notifyPelangganSubscribers();
     }, (error) => {
@@ -121,9 +307,8 @@ export const usePelangganStream = () => {
     return { pelangganList: data, loadingPelanggan: loading };
 };
 
-
 // ============================================================================
-// 3. TRANSAKSI JUAL STREAM (PERBAIKAN UTAMA: LOADING STATE)
+// 5. TRANSAKSI JUAL STREAM (CACHE + FILTER LOGIC)
 // ============================================================================
 let globalTransaksiData = [];
 let globalTransaksiLoading = true;
@@ -138,30 +323,26 @@ const notifyTransaksiSubscribers = () => {
 const connectTransaksiStream = (filterParams) => {
     const newFilterKey = JSON.stringify(filterParams);
 
-    // 1. Jika Filter SAMA -> Pakai Cache (Instant Load)
+    // 1. Same Filter -> Use Cache
     if (globalTransaksiUnsubscribe && globalTransaksiFilterKey === newFilterKey) {
-        console.log("%c🛒 [TRANSAKSI] Using Existing Stream (No Reload)", "color: #E91E63; background: #FCE4EC; padding: 2px 5px; border-radius: 3px;");
         notifyTransaksiSubscribers();
         return;
     }
 
-    // 2. Jika Filter BEDA -> Reset Stream & DATA
+    // 2. Different Filter -> Reset
     if (globalTransaksiUnsubscribe) {
         console.log("%c🛒 [TRANSAKSI] Filter Changed. Resetting...", "color: orange");
         globalTransaksiUnsubscribe();
         globalTransaksiUnsubscribe = null;
-        
-        // HARD RESET: Kosongkan data global agar semua subscriber masuk state loading
         globalTransaksiData = []; 
     }
 
-    let logMsg = filterParams.mode === 'all' ? "ALL TIME" : "RANGE DATE";
+    const logMsg = filterParams.mode === 'all' ? "ALL TIME" : "RANGE DATE";
     console.log(`%c🛒 [TRANSAKSI] Stream Initialized (${logMsg})`, "color: white; background: #E91E63; padding: 2px 5px; border-radius: 3px; font-weight: bold;");
 
-    // Set Loading TRUE seketika
     globalTransaksiLoading = true;
     globalTransaksiFilterKey = newFilterKey;
-    notifyTransaksiSubscribers(); // Trigger UI update (Show Spinner)
+    notifyTransaksiSubscribers();
 
     const dbRef = ref(db, 'transaksiJualBuku');
     let q;
@@ -177,16 +358,15 @@ const connectTransaksiStream = (filterParams) => {
         );
     }
 
-    // Menggunakan setTimeout 0 agar React sempat me-render Loading State
-    // sebelum thread diblokir oleh proses data yang besar
+    // setTimeout 0 untuk unblock rendering thread
     setTimeout(() => {
         globalTransaksiUnsubscribe = onValue(q, (snapshot) => {
-            const formattedData = snapshotToArrayWithId(snapshot);
-            formattedData.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
+            const data = snapshotToArrayWithId(snapshot);
+            data.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
             
-            console.log(`%c🛒 [TRANSAKSI] Data Loaded: ${formattedData.length} items`, "color: #E91E63");
+            console.log(`%c🛒 [TRANSAKSI] Data Loaded: ${data.length} items`, "color: #E91E63");
             
-            globalTransaksiData = formattedData;
+            globalTransaksiData = data;
             globalTransaksiLoading = false;
             notifyTransaksiSubscribers();
         }, (error) => {
@@ -198,16 +378,12 @@ const connectTransaksiStream = (filterParams) => {
 };
 
 export const useTransaksiJualStream = (filterParams) => {
-    // Inisialisasi state dengan global data saat ini
     const [data, setData] = useState(globalTransaksiData);
     const [loading, setLoading] = useState(globalTransaksiLoading);
-
-    // Deteksi perubahan filter di level komponen untuk local reset
     const currentFilterJson = JSON.stringify(filterParams);
 
     useEffect(() => {
-        // Jika filter berubah dan tidak cocok dengan cache global, 
-        // paksa komponen ini loading dulu (Local Reset)
+        // Local Reset jika filter berubah dan cache belum siap
         if (currentFilterJson !== globalTransaksiFilterKey) {
             setLoading(true);
             setData([]); 
@@ -221,17 +397,14 @@ export const useTransaksiJualStream = (filterParams) => {
         };
         transaksiSubscribers.add(onDataUpdate);
         
-        return () => {
-            transaksiSubscribers.delete(onDataUpdate);
-        };
+        return () => transaksiSubscribers.delete(onDataUpdate);
     }, [currentFilterJson]);
 
     return { transaksiList: data, loadingTransaksi: loading };
 };
 
-
 // ============================================================================
-// 4. HISTORI STOK STREAM (DENGAN HARD RESET)
+// 6. HISTORI STOK STREAM (CACHE + FILTER LOGIC)
 // ============================================================================
 let globalHistoriData = [];
 let globalHistoriLoading = true;
@@ -247,7 +420,6 @@ const connectHistoriStream = (filterParams) => {
     const newFilterKey = JSON.stringify(filterParams);
 
     if (globalHistoriUnsubscribe && globalHistoriFilterKey === newFilterKey) {
-        console.log("%c🕰️ [HISTORI] Using Existing Stream (No Reload)", "color: purple; background: #f9f0ff; padding: 2px 5px; border-radius: 3px;");
         notifyHistoriSubscribers();
         return;
     }
@@ -256,7 +428,7 @@ const connectHistoriStream = (filterParams) => {
         console.log("%c🕰️ [HISTORI] Filter Changed. Resetting...", "color: orange");
         globalHistoriUnsubscribe();
         globalHistoriUnsubscribe = null;
-        globalHistoriData = []; // Hard Reset
+        globalHistoriData = []; 
     }
 
     const startStr = dayjs(filterParams.startDate).format("DD/MM");
@@ -277,12 +449,12 @@ const connectHistoriStream = (filterParams) => {
 
     setTimeout(() => {
         globalHistoriUnsubscribe = onValue(q, (snapshot) => {
-            const formattedData = snapshotToArrayWithId(snapshot);
-            formattedData.sort((a, b) => b.timestamp - a.timestamp);
+            const data = snapshotToArrayWithId(snapshot);
+            data.sort((a, b) => b.timestamp - a.timestamp);
             
-            console.log(`%c🕰️ [HISTORI] Data Loaded: ${formattedData.length} items`, "color: purple");
+            console.log(`%c🕰️ [HISTORI] Data Loaded: ${data.length} items`, "color: purple");
             
-            globalHistoriData = formattedData;
+            globalHistoriData = data;
             globalHistoriLoading = false;
             notifyHistoriSubscribers();
         }, (error) => {
@@ -318,9 +490,8 @@ export const useHistoriStokStream = ({ startDate, endDate }) => {
     return { historyList: data, loadingHistory: loading };
 };
 
-
 // ============================================================================
-// 5. MUTASI STREAM (DENGAN HARD RESET)
+// 7. MUTASI STREAM (CACHE + FILTER LOGIC)
 // ============================================================================
 let globalMutasiData = [];
 let globalMutasiLoading = true;
@@ -336,7 +507,6 @@ const connectMutasiStream = (filterParams) => {
     const newFilterKey = JSON.stringify(filterParams);
 
     if (globalMutasiUnsubscribe && globalMutasiFilterKey === newFilterKey) {
-        console.log("%c💰 [MUTASI] Using Existing Stream (No Reload)", "color: green; background: #f6ffed; padding: 2px 5px; border-radius: 3px;");
         notifyMutasiSubscribers();
         return;
     }
@@ -345,7 +515,7 @@ const connectMutasiStream = (filterParams) => {
         console.log("%c💰 [MUTASI] Filter Changed. Resetting...", "color: orange");
         globalMutasiUnsubscribe();
         globalMutasiUnsubscribe = null;
-        globalMutasiData = []; // Hard Reset
+        globalMutasiData = []; 
     }
 
     console.log("%c💰 [MUTASI] Stream Initialized", "color: white; background: green; padding: 2px 5px; border-radius: 3px; font-weight: bold;");
@@ -363,17 +533,17 @@ const connectMutasiStream = (filterParams) => {
 
     setTimeout(() => {
         globalMutasiUnsubscribe = onValue(q, (snapshot) => {
-            const rawData = snapshotToArrayWithId(snapshot);
+            const data = snapshotToArrayWithId(snapshot);
             const getTimestamp = (r) => r?.tanggal || r?.tanggalBayar || 0;
-            rawData.sort((a, b) => getTimestamp(b) - getTimestamp(a));
+            data.sort((a, b) => getTimestamp(b) - getTimestamp(a));
 
-            console.log(`%c💰 [MUTASI] Data Incoming: ${rawData.length} items`, "color: green");
+            console.log(`%c💰 [MUTASI] Data Incoming: ${data.length} items`, "color: green");
 
-            globalMutasiData = rawData;
+            globalMutasiData = data;
             globalMutasiLoading = false;
             notifyMutasiSubscribers();
         }, (error) => {
-            console.error("🔴 [Stream] Error:", error);
+            console.error("Error streaming mutasi:", error);
             globalMutasiLoading = false;
             notifyMutasiSubscribers();
         });
@@ -400,102 +570,7 @@ export function useMutasiStream(filterParams) {
     return { mutasiList: data, loadingMutasi: loading };
 }
 
-// ==================================================================
-// 6. FUNGSI PENCARIAN INVOICE (ON DEMAND)
-// ==================================================================
-export const searchInvoices = async (keyword = "", isReturMode) => {
-    const dbRef = ref(db, 'transaksiJualBuku');
-    let finalResults = [];
 
-    try {
-        console.log(`%c🔍 [SEARCH] Searching: "${keyword}"`, "color: teal");
-        
-        if (!keyword) {
-            const q = query(dbRef, orderByChild('tanggal'), limitToLast(100));
-            const snapshot = await get(q);
-            
-            if (snapshot.exists()) {
-                const val = snapshot.val();
-                let list = Object.keys(val).map(key => ({ id: key, ...val[key] }));
-                list.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
-
-                if (isReturMode) {
-                    finalResults = list;
-                } else {
-                    finalResults = list.filter(item => 
-                        item.statusPembayaran === 'Belum' || 
-                        item.statusPembayaran === 'Sebagian' || 
-                        item.statusPembayaran === 'DP'
-                    );
-                }
-            }
-        } 
-        else {
-            const searchInvoice = keyword.toUpperCase();
-            const searchName = keyword; 
-
-            const queries = [
-                query(dbRef, orderByChild('nomorInvoice'), startAt(searchInvoice), endAt(searchInvoice + "\uf8ff"), limitToFirst(20)),
-                query(dbRef, orderByChild('namaPelanggan'), startAt(searchName), endAt(searchName + "\uf8ff"), limitToFirst(20))
-            ];
-
-            const snapshots = await Promise.all(queries.map(q => get(q)));
-            const uniqueMap = new Map();
-            snapshots.forEach(snap => {
-                if (snap.exists()) {
-                    const val = snap.val();
-                    Object.keys(val).forEach(key => {
-                        uniqueMap.set(key, { id: key, ...val[key] });
-                    });
-                }
-            });
-
-            finalResults = Array.from(uniqueMap.values());
-
-            if (!isReturMode) {
-                finalResults = finalResults.filter(item => item.statusPembayaran !== 'Lunas');
-            }
-            
-            finalResults.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
-        }
-
-        console.log(`%c🔍 [SEARCH] Found: ${finalResults.length} items`, "color: teal");
-        return finalResults.slice(0, 20);
-
-    } catch (error) {
-        console.error("Error fetching invoices:", error);
-        return [];
-    }
-};
-
-// ==================================================================
-// 7. LOGIC LAZY UNPAID JUAL (ON DEMAND STREAM)
-// ==================================================================
-export function useLazyUnpaidJual() {
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        console.log("%c🟠 [UNPAID] Stream Started...", "color: orange");
-        setLoading(true);
-
-        const dbRef = ref(db, 'transaksiJualBuku');
-        const q = query(dbRef, orderByChild('statusPembayaran'), equalTo('Belum'));
-        
-        const unsubscribe = onValue(q, (snap) => {
-            const list = snapshotToArrayWithId(snap);
-            list.sort((a, b) => (b.tanggal || 0) - (a.tanggal || 0));
-            
-            console.log(`%c🟠 [UNPAID] Data Updated: ${list.length} items`, "color: orange");
-            setData(list);
-            setLoading(false);
-        });
-
-        return () => {
-            console.log("%c🟠 [UNPAID] Stream Stopped", "color: gray");
-            off(q); 
-        };
-    }, []);
-
-    return { unpaidJual: data, loadingInvoices: loading };
-}
+// ============================================================================
+// 9. LOGIC LAZY UNPAID JUAL (ON DEMAND STREAM)
+// ============================================================================

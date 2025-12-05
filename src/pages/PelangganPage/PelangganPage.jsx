@@ -156,7 +156,7 @@ export default function PelangganPage() {
                         />
                     </Tooltip>
                     
-                    <Tooltip title="Edit">
+                    {/* <Tooltip title="Edit">
                         <Button type="link" icon={<EditOutlined />} onClick={() => handleOpenEdit(record)} />
                     </Tooltip>
 
@@ -168,7 +168,7 @@ export default function PelangganPage() {
                         okButtonProps={{ danger: true }}
                     >
                         <Button type="link" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
+                    </Popconfirm> */}
                 </Space>
             ),
         },

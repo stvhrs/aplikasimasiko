@@ -23,6 +23,10 @@ export const NavigationMenu = ({ activeKey, onLinkClick }) => (
         onClick={onLinkClick}
         items={[
             { key: '/mutasi', icon: <SwapOutlined />, label: <Link to="/mutasi">Mutasi</Link> },
+            { key: '/pembayaran', icon: <SwapOutlined />, label: <Link to="/pembayaran">Pembayaran</Link> },
+
+            { key: '/retur', icon: <SwapOutlined />, label: <Link to="/retur">Retur</Link> },
+
             { key: '/buku', icon: <BookOutlined />, label: <Link to="/buku">Data Buku</Link> },
             { key: '/transaksi-jual', icon: <ShoppingCartOutlined />, label: <Link to="/transaksi-jual">Transaksi Jual</Link> },
             { key: '/pelanggan', icon: <TeamOutlined />, label: <Link to="/pelanggan">Data Pelanggan</Link> },

@@ -23,94 +23,94 @@ const CustomerHistoryModal = ({ open, onCancel, pelanggan }) => {
         if (!pelanggan) return;
         setLoading(true);
         try {
-            // A. AMBIL INVOICE (Query pakai idPelanggan - karena di Invoice pasti ada ID)
+            // A. AMBIL INVOICE (PIUTANG) -> Sumber: transaksiJualBuku
             const qInvoice = query(ref(db, 'transaksiJualBuku'), orderByChild('idPelanggan'), equalTo(pelanggan.id));
-            const snapInvoice = await get(qInvoice);
             
-            // B. AMBIL MUTASI (Query pakai namaPelanggan - karena di Mutasi kadang ID belum tersimpan)
-            // Pastikan di Firebase Rules: "mutasi": { ".indexOn": ["namaPelanggan"] }
-            const qMutasi = query(ref(db, 'mutasi'), orderByChild('namaPelanggan'), equalTo(pelanggan.nama));
-            const snapMutasi = await get(qMutasi);
+            // B. AMBIL PEMBAYARAN (BAYAR) -> Sumber: historiPembayaran
+            const qBayar = query(ref(db, 'historiPembayaran'), orderByChild('namaPelanggan'), equalTo(pelanggan.nama));
+            
+            // C. AMBIL RETUR (DIANGGAP BAYAR/PENGURANG) -> Sumber: historiRetur
+            const qRetur = query(ref(db, 'historiRetur'), orderByChild('namaPelanggan'), equalTo(pelanggan.nama));
+
+            const [snapInvoice, snapBayar, snapRetur] = await Promise.all([
+                get(qInvoice),
+                get(qBayar),
+                get(qRetur)
+            ]);
 
             let rawData = [];
 
-            // --- PROSES 1: INVOICE (Sesuai Request: MINUS) ---
+            // 1. PROSES INVOICE
             if (snapInvoice.exists()) {
-                const invObj = snapInvoice.val();
-                Object.keys(invObj).forEach(key => {
-                    const item = invObj[key];
+                snapInvoice.forEach(child => {
+                    const val = child.val();
                     rawData.push({
-                        id: key,
+                        id: child.key,
+                        rawId: val.nomorInvoice || child.key,
+                        dateObj: val.tanggal,
                         type: 'INVOICE',
-                        kategoriDisplay: 'Tagihan / Invoice',
-                        tanggal: item.tanggal,
-                        keterangan: `Invoice #${item.nomorInvoice}`,
-                        // USER REQUEST: Transaksi Jual Buku (Invoice) = MINUS
-                        nominalEfektif: -Math.abs(Number(item.totalTagihan || 0)) 
+                        keterangan: 'Pembelian Buku',
+                        debit: Number(val.totalTagihan || 0), 
+                        credit: 0
                     });
                 });
             }
 
-            // --- PROSES 2: MUTASI (Pembayaran & Retur) ---
-            if (snapMutasi.exists()) {
-                const mutObj = snapMutasi.val();
-                Object.keys(mutObj).forEach(key => {
-                    const item = mutObj[key];
-                    
-                    // Filter kategori yang relevan
-                    if (item.kategori === 'Retur Buku' || item.kategori === 'Penjualan Buku') {
-                        
-                        let nominal = 0;
-                        let labelKat = item.kategori;
-                        let desc = item.keterangan || '';
-
-                        // A. Retur Buku -> USER REQUEST: MINUS
-                        if (item.kategori === 'Retur Buku') {
-                            labelKat = 'Retur Buku';
-                            // Pakai Math.abs lalu dikali -1 biar pasti MINUS
-                            nominal = -Math.abs(Number(item.jumlah || 0)); 
-                        } 
-                        // B. Penjualan Buku (Pembayaran Masuk) -> USER REQUEST: PLUS
-                        else if (item.kategori === 'Penjualan Buku' && item.tipe === 'pemasukan') {
-                            labelKat = 'Pembayaran Masuk'; 
-                            // Pastikan jadi POSITIF
-                            nominal = Math.abs(Number(item.jumlah || 0));
-                        }
-
-                        rawData.push({
-                            id: key,
-                            type: item.kategori === 'Retur Buku' ? 'RETUR' : 'PAYMENT',
-                            kategoriDisplay: labelKat,
-                            tanggal: item.tanggal,
-                            keterangan: desc,
-                            nominalEfektif: nominal
-                        });
-                    }
+            // 2. PROSES PEMBAYARAN
+            if (snapBayar.exists()) {
+                snapBayar.forEach(child => {
+                    const val = child.val();
+                    rawData.push({
+                        id: child.key,
+                        rawId: val.id || child.key,
+                        dateObj: val.tanggal,
+                        type: 'PAYMENT',
+                        keterangan: val.keterangan || 'Pembayaran',
+                        debit: 0,
+                        credit: Number(val.jumlah || 0) 
+                    });
                 });
             }
 
-            // 3. SORTING KRONOLOGIS (Terlama ke Terbaru) untuk hitung Saldo Berjalan
-            rawData.sort((a, b) => a.tanggal - b.tanggal);
+            // 3. PROSES RETUR
+            if (snapRetur.exists()) {
+                snapRetur.forEach(child => {
+                    const val = child.val();
+                    const nilaiRetur = Number(val.totalHarga || val.nominal || 0);
+                    
+                    rawData.push({
+                        id: child.key,
+                        rawId: val.id || child.key,
+                        dateObj: val.timestamp || val.tanggal, 
+                        type: 'RETUR',
+                        keterangan: 'Retur Barang',
+                        debit: 0,
+                        credit: nilaiRetur 
+                    });
+                });
+            }
 
-            // 4. HITUNG SALDO BERJALAN
+            // 4. SORTING KRONOLOGIS (Terlama ke Terbaru) untuk hitung Saldo Berjalan
+            rawData.sort((a, b) => a.dateObj - b.dateObj);
+
+            // 5. HITUNG SALDO BERJALAN
             let currentBalance = 0;
             const dataWithBalance = rawData.map(item => {
-                currentBalance += item.nominalEfektif;
+                currentBalance = currentBalance + item.debit - item.credit;
                 return {
                     ...item,
-                    saldoBerjalan: currentBalance
+                    saldo: currentBalance
                 };
             });
 
-            // 5. Simpan Saldo Terakhir
             setSummary({ saldoAkhir: currentBalance });
-
-            // 6. BALIK URUTAN (Terbaru Diatas) untuk ditampilkan di tabel
+            
+            // 6. TAMPILKAN (Terbaru diatas sebagai default)
             setAllTransactions(dataWithBalance.reverse());
 
         } catch (error) {
             console.error("Error fetch history:", error);
-            message.error("Gagal mengambil riwayat transaksi");
+            message.error("Gagal memuat data histori");
         } finally {
             setLoading(false);
         }
@@ -128,121 +128,120 @@ const CustomerHistoryModal = ({ open, onCancel, pelanggan }) => {
         if (!searchText) return allTransactions;
         const lower = searchText.toLowerCase();
         return allTransactions.filter(item => 
-            (item.keterangan && item.keterangan.toLowerCase().includes(lower)) ||
-            (item.kategoriDisplay && item.kategoriDisplay.toLowerCase().includes(lower))
+            (item.rawId && item.rawId.toLowerCase().includes(lower)) ||
+            (item.type && item.type.toLowerCase().includes(lower)) ||
+            (item.keterangan && item.keterangan.toLowerCase().includes(lower))
         );
     }, [allTransactions, searchText]);
 
     // --- GENERATE PDF ---
     const handleDownloadPDF = () => {
         const doc = new jsPDF();
-        const dataToPrint = filteredTransactions;
-
+        
         doc.setFontSize(14);
-        doc.text("KARTU RIWAYAT PELANGGAN", 14, 20);
-        
-        doc.setFontSize(9);
+        doc.text("KARTU PIUTANG PELANGGAN", 14, 20);
+        doc.setFontSize(10);
         doc.text(`Nama : ${pelanggan.nama}`, 14, 30);
-        doc.text(`Telp : ${pelanggan.telepon || '-'}`, 14, 35);
+        doc.text(`Tgl Cetak : ${dayjs().format('DD/MM/YYYY HH:mm')}`, 14, 35);
         
-        const tableColumn = ["Tanggal", "Transaksi", "Keterangan", "Nominal", "Saldo"];
+        const tableColumn = ["Tanggal", "ID Transaksi", "Keterangan", "Bayar", "Piutang", "Saldo"];
         const tableRows = [];
 
-        dataToPrint.forEach(t => {
+        // Sort ulang berdasarkan tanggal untuk PDF agar urut kronologis
+        const dataForPdf = [...filteredTransactions].sort((a, b) => a.dateObj - b.dateObj);
+
+        dataForPdf.forEach(t => {
             tableRows.push([
-                dayjs(t.tanggal).format('DD/MM/YY'),
-                t.kategoriDisplay,
-                t.keterangan || '-',
-                { content: formatCurrency(t.nominalEfektif), styles: { halign: 'right', textColor: t.nominalEfektif < 0 ? [200, 0, 0] : [0, 0, 0] } },
-                { content: formatCurrency(t.saldoBerjalan), styles: { halign: 'right', fontStyle: 'bold' } }
+                dayjs(t.dateObj).format('DD/MM/YY'),
+                t.rawId,
+                t.keterangan,
+                t.credit > 0 ? formatCurrency(t.credit) : '-',
+                t.debit > 0 ? formatCurrency(t.debit) : '-',
+                formatCurrency(t.saldo)
             ]);
         });
 
         autoTable(doc, {
             head: [tableColumn],
             body: tableRows,
-            startY: 45,
+            startY: 40,
             theme: 'grid',
-            styles: { fontSize: 8, cellPadding: 2 }
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+                3: { halign: 'right' }, 
+                4: { halign: 'right' }, 
+                5: { halign: 'right', fontStyle: 'bold' }
+            }
         });
 
-        doc.save(`Riwayat_${pelanggan.nama.replace(/\s+/g, '_')}.pdf`);
+        doc.save(`Kartu_Piutang_${pelanggan.nama}.pdf`);
     };
 
-    // --- KOLOM TABEL ---
+    // --- KOLOM TABEL (DENGAN SORTING) ---
     const columns = [
         {
-            title: 'Tanggal',
-            dataIndex: 'tanggal',
+            title: 'Tgl',
+            dataIndex: 'dateObj',
             key: 'tanggal',
-            width: 100,
+            width: 110,
             render: (val) => dayjs(val).format('DD MMM YYYY'),
-            sorter: (a, b) => a.tanggal - b.tanggal,
+            // Sorting berdasarkan Tanggal (Timestamp)
+            sorter: (a, b) => a.dateObj - b.dateObj,
         },
         {
-            title: 'Jenis',
-            dataIndex: 'kategoriDisplay',
-            key: 'jenis',
-            width: 140,
-            render: (val) => {
+            title: 'ID Transaksi',
+            dataIndex: 'rawId',
+            key: 'idTransaksi',
+            width: 150,
+            render: (text, r) => {
                 let color = 'default';
-                if (val === 'Tagihan / Invoice') color = 'red'; // Minus
-                if (val === 'Retur Buku') color = 'volcano';    // Minus
-                if (val === 'Pembayaran Masuk') color = 'green';// Plus
-                return <Tag color={color}>{val}</Tag>;
-            }
+                if(r.type === 'INVOICE') color = 'blue';
+                if(r.type === 'PAYMENT') color = 'green';
+                if(r.type === 'RETUR') color = 'orange';
+                return <Tag color={color}>{text}</Tag>
+            },
+            // Sorting berdasarkan String ID
+            sorter: (a, b) => (a.rawId || '').localeCompare(b.rawId || ''),
         },
         {
-            title: 'Keterangan',
-            dataIndex: 'keterangan',
-            key: 'keterangan',
-            render: (text) => {
-                if (!searchText) return text;
-                const parts = text.split(new RegExp(`(${searchText})`, 'gi'));
-                return (
-                    <span>
-                        {parts.map((part, i) => 
-                            part.toLowerCase() === searchText.toLowerCase() ? 
-                            (<span key={i} style={{ backgroundColor: '#ffc069' }}>{part}</span>) : part
-                        )}
-                    </span>
-                );
-            }
-        },
-        {
-            title: 'Nominal',
-            dataIndex: 'nominalEfektif',
-            key: 'nominal',
+            title: 'Bayar',
+            dataIndex: 'credit',
+            key: 'bayar',
             align: 'right',
-            width: 140,
-            sorter: (a, b) => a.nominalEfektif - b.nominalEfektif,
-            render: (val) => (
-                <Text style={{ color: val < 0 ? '#cf1322' : '#389e0d', fontWeight: 'bold' }}>
-                    {val > 0 ? `+ ${formatCurrency(val)}` : formatCurrency(val)}
-                </Text>
-            )
+            width: 130,
+            render: (val) => val > 0 ? <Text style={{color: '#389e0d'}}>{formatCurrency(val)}</Text> : '-',
+            // Sorting berdasarkan Nominal Bayar
+            sorter: (a, b) => a.credit - b.credit,
+        },
+        {
+            title: 'Piutang',
+            dataIndex: 'debit',
+            key: 'piutang',
+            align: 'right',
+            width: 130,
+            render: (val) => val > 0 ? <Text style={{color: '#cf1322'}}>{formatCurrency(val)}</Text> : '-',
+            // Sorting berdasarkan Nominal Piutang
+            sorter: (a, b) => a.debit - b.debit,
         },
         {
             title: 'Saldo',
-            dataIndex: 'saldoBerjalan',
+            dataIndex: 'saldo',
             key: 'saldo',
             align: 'right',
             width: 140,
             render: (val) => (
-                <Text strong style={{ color: val < 0 ? '#cf1322' : '#096dd9' }}>
+                <Text strong style={{ color: '#096dd9' }}>
                     {formatCurrency(val)}
                 </Text>
-            )
+            ),
+            // Sorting berdasarkan Nominal Saldo Berjalan
+            sorter: (a, b) => a.saldo - b.saldo,
         }
     ];
 
     return (
         <Modal
-            title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>Kartu Riwayat: <b>{pelanggan?.nama}</b></span>
-                </div>
-            }
+            title={`Riwayat Transaksi: ${pelanggan?.nama}`}
             open={open}
             onCancel={onCancel}
             width={900}
@@ -254,24 +253,21 @@ const CustomerHistoryModal = ({ open, onCancel, pelanggan }) => {
             ]}
         >
             <Spin spinning={loading}>
-                <Card style={{ marginBottom: 16, background: '#f0f2f5' }} bodyStyle={{ padding: '12px 16px' }}>
+                <Card style={{ marginBottom: 16, background: '#f5f5f5' }} bodyStyle={{ padding: '16px' }}>
                     <Row gutter={[16, 16]} align="middle">
-                        <Col xs={24} md={10}>
+                        <Col xs={24} md={8}>
                              <Statistic 
-                                title="Total Saldo Akhir" 
+                                title="Sisa Piutang (Saldo Akhir)" 
                                 value={summary.saldoAkhir} 
                                 precision={0}
-                                valueStyle={{ 
-                                    color: summary.saldoAkhir >= 0 ? '#096dd9' : '#cf1322', 
-                                    fontWeight: 'bold' 
-                                }}
+                                valueStyle={{ color: summary.saldoAkhir > 0 ? '#cf1322' : '#3f8600', fontWeight: 'bold' }}
                                 prefix="Rp"
                              />
                         </Col>
-                        <Col xs={24} md={14}>
+                        <Col xs={24} md={16}>
                             <Input
-                                placeholder="Cari keterangan, invoice..."
-                                prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                                placeholder="Cari ID Transaksi..."
+                                prefix={<SearchOutlined />}
                                 value={searchText}
                                 onChange={(e) => setSearchText(e.target.value)}
                                 allowClear
@@ -284,7 +280,7 @@ const CustomerHistoryModal = ({ open, onCancel, pelanggan }) => {
                     columns={columns}
                     dataSource={filteredTransactions}
                     rowKey="id"
-                    pagination={{ pageSize: 10 }}
+                    pagination={{ pageSize: 8 }}
                     size="small"
                     scroll={{ x: 700 }}
                 />
