@@ -20,7 +20,7 @@ import TransaksiJualPage from './pages/TransaksiJualPage/TransaksiJualPage';
 // import DataGeneratorPage from './pages/DataGeneratorPage'; // Hapus jika tidak dipakai
 import PelangganPage from './pages/PelangganPage/PelangganPage';
 // import PelangganPage from './pages/PelangganPage/PelangganPage';
-import ReturPage from './pages/PembayaranPage copy/ReturPage';
+import ReturPage from './pages/ReturPage/ReturPage';
 
 // import JsonUploader from './pages/excel'; // Hapus jika tidak dipakai
 // import DataGeneratorTransaksiJual from './pages/data'; // Hapus jika tidak dipakai
@@ -32,10 +32,6 @@ import NotaPublicPage from './pages/NotaPublicPage';
 
 // --- (BARU) Impor Halaman Generate ---
 // Pastikan Anda sudah membuat file-file ini atau ganti dengan impor yang benar
-import GBukuPage from './pages/GBukuPage'; // Contoh path
-import GMutasiPage from './pages/GMutasiPage'; // Contoh path
-import GJualPage from './pages/GJualPage'; // Contoh path
-import GenerateBukuChart from './pages/generatedatachartbuku';
 import PembayaranPage from './pages/PembayaranPage/PembayaranPage';
 
 

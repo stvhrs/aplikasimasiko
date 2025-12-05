@@ -2,11 +2,16 @@ import React from 'react';
 import { Layout, Menu, Button, Typography } from 'antd';
 import { Link } from 'react-router-dom';
 import {
-    BookOutlined,
+   ReadOutlined, 
+    UserOutlined, 
+     
+    WalletOutlined, 
+    RollbackOutlined,  BookOutlined,
     SwapOutlined,
     ShoppingCartOutlined,
     TeamOutlined,
     LogoutOutlined,
+    AccountBookOutlined
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -16,22 +21,51 @@ const { Text } = Typography;
 // Navigation Menu Component
 // ============================
 export const NavigationMenu = ({ activeKey, onLinkClick }) => (
-    <Menu
-        theme="dark"
-        mode="inline"
-        selectedKeys={[activeKey]}
-        onClick={onLinkClick}
-        items={[
-            { key: '/mutasi', icon: <SwapOutlined />, label: <Link to="/mutasi">Mutasi</Link> },
-            { key: '/pembayaran', icon: <SwapOutlined />, label: <Link to="/pembayaran">Pembayaran</Link> },
+   <Menu
+    theme="dark"
+    mode="inline"
+    selectedKeys={[activeKey]}
+    onClick={onLinkClick}
+    items={[
+        // 1. DATA MASTER (Paling atas karena setup awal)
+        { 
+            key: '/buku', 
+            icon: <ReadOutlined />, // Ikon buku terbuka, lebih relevan dari BookOutlined
+            label: <Link to="/buku">Data Buku</Link> 
+        },
+        { 
+            key: '/pelanggan', 
+            icon: <UserOutlined />, // Standar untuk user/customer
+            label: <Link to="/pelanggan">Data Pelanggan</Link> 
+        },
 
-            { key: '/retur', icon: <SwapOutlined />, label: <Link to="/retur">Retur</Link> },
+        // 2. TRANSAKSI UTAMA
+        { 
+            key: '/transaksi-jual', 
+            icon: <ShoppingCartOutlined />, // Ikon keranjang belanja
+            label: <Link to="/transaksi-jual">Transaksi Jual</Link> 
+        },
 
-            { key: '/buku', icon: <BookOutlined />, label: <Link to="/buku">Data Buku</Link> },
-            { key: '/transaksi-jual', icon: <ShoppingCartOutlined />, label: <Link to="/transaksi-jual">Transaksi Jual</Link> },
-            { key: '/pelanggan', icon: <TeamOutlined />, label: <Link to="/pelanggan">Data Pelanggan</Link> },
-        ]}
-    />
+        // 3. KEUANGAN & PENYELESAIAN
+        { 
+            key: '/pembayaran', 
+            icon: <WalletOutlined />, // Dompet, merepresentasikan uang masuk/pelunasan
+            label: <Link to="/pembayaran">Pembayaran</Link> 
+        },
+        { 
+            key: '/retur', 
+            icon: <RollbackOutlined />, // Panah memutar balik, simbol universal "Undo" atau barang kembali
+            label: <Link to="/retur">Retur</Link> 
+        },
+
+        // 4. PEMBUKUAN / LAPORAN
+        { 
+            key: '/mutasi', 
+            icon: <AccountBookOutlined />, // Ikon buku akuntansi/ledger
+            label: <Link to="/mutasi">Mutasi & Kas</Link> 
+        },
+    ]}
+/>
 );
 
 // ============================
