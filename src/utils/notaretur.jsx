@@ -16,9 +16,6 @@ const terms = [
 const formatCurrency = (value) => new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(value || 0);
 const formatDate = (timestamp) => new Date(timestamp || 0).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute:'2-digit' });
 
-/**
- * Generator PDF Khusus Nota Retur
- */
 const buildDoc = (data) => {
     const doc = new jsPDF('portrait', 'mm', 'a4'); 
     const margin = { top: 20, right: 20, bottom: 30, left: 20 };
@@ -43,11 +40,10 @@ const buildDoc = (data) => {
 
     // --- 2. INFO TRANSAKSI ---
     const idDokumen = data.id || '-';
-    const refDokumen = data.idTransaksi || data.nomorInvoice || '-'; // ID Invoice Asal
+    const refDokumen = data.nomorInvoice || data.idTransaksi || '-'; 
 
     let namaPelanggan = data.namaPelanggan;
     if (!namaPelanggan && data.keterangan) {
-        // Fallback: Coba ambil nama dari keterangan jika ada
         const match = data.keterangan.match(/\((.*?)\)$/);
         namaPelanggan = match ? match[1] : "-"; 
     }
@@ -55,8 +51,6 @@ const buildDoc = (data) => {
     const infoX = pageWidth / 2 + 10;
     
     doc.setFontSize(10); 
-    
-    // Kiri
     doc.setFont('helvetica', 'bold'); doc.text('No. Retur:', margin.left, currentY);
     doc.setFont('helvetica', 'normal'); doc.text(idDokumen, margin.left + 30, currentY);
     currentY += 5;
@@ -65,7 +59,6 @@ const buildDoc = (data) => {
     doc.setFont('helvetica', 'normal'); doc.text(String(refDokumen), margin.left + 30, currentY);
     currentY += 5;
 
-    // Kanan
     const rightY = currentY - 10;
     doc.setFont('helvetica', 'bold'); doc.text('Tanggal:', infoX, rightY);
     doc.setFont('helvetica', 'normal'); doc.text(formatDate(data.tanggal), infoX + 25, rightY);
@@ -78,68 +71,103 @@ const buildDoc = (data) => {
     currentY += 10;
 
     // --- 3. TABEL ITEM RETUR ---
+  // --- 3. TABEL ITEM RETUR ---
     const head = [['No', 'Item Buku', 'Qty', 'Harga', 'Subtotal']];
     let body = [];
+    let calculatedTotal = 0;
 
-    // Cek apakah ada detail item yang tersimpan lengkap (Struktur Baru)
-    if (data.itemsReturDetail && Array.isArray(data.itemsReturDetail) && data.itemsReturDetail.length > 0) {
-            body = data.itemsReturDetail.map((item, i) => {
+    // 1. Normalisasi Data: Pastikan kita punya Array, apapun format aslinya
+    let listItems = data.itemsReturDetail;
+
+    // Jaga-jaga jika data dari database berupa string JSON (misal: "[{...}, {...}]")
+    if (typeof listItems === 'string') {
+        try {
+            listItems = JSON.parse(listItems);
+        } catch (e) {
+            console.error("Gagal parse JSON itemsReturDetail", e);
+            listItems = [];
+        }
+    }
+
+    // Jaga-jaga jika data berupa Object (bukan Array) seperti format Firebase Realtime DB
+    if (listItems && typeof listItems === 'object' && !Array.isArray(listItems)) {
+        listItems = Object.values(listItems);
+    }
+
+    // --- LOGIKA UTAMA ---
+    if (Array.isArray(listItems) && listItems.length > 0) {
+        // OPSI A: Jika data sudah berupa Array Detail
+        body = listItems.map((item, i) => {
+            const judul = item.judulBuku || item.judul || item.nama_buku || '-'; // Tambahkan variasi nama field
+            const qty = Number(item.qty || item.quantity || item.jumlah || 0);
+            
             const harga = Number(item.hargaSatuan || item.harga || 0);
-            const qty = Number(item.jumlah || item.qty || 0);
-            const disc = Number(item.diskonPersen || item.diskon || 0);
-            // Subtotal per item setelah diskon
-            const sub = harga * qty * (1);
+            let sub = Number(item.subtotal || 0);
+
+            // Hitung subtotal manual jika 0/null
+            if (!sub && harga > 0 && qty > 0) {
+                sub = harga * qty;
+            }
+
+            calculatedTotal += sub;
 
             return [
                 i + 1,
-                item.judul || item.idBuku,
+                judul,
                 qty,
                 formatCurrency(harga),
                 formatCurrency(sub)
             ];
-            });
+        });
     } 
-    // Fallback ke data lama (String Ringkas)
     else if (data.itemsReturRingkas) {
-        const itemsStr = data.itemsReturRingkas.split(', ');
+        // OPSI B: Jika data hanya berupa String panjang (Fallback)
+        // Gunakan Regex koma (,) diikuti spasi opsional agar lebih aman
+        const itemsStr = data.itemsReturRingkas.split(/,\s*/); 
+        
         body = itemsStr.map((str, i) => {
-            const match = str.match(/(.*)\s\(x(\d+)\)/); 
+            // Coba ambil format "Judul Buku (x2)"
+            const match = str.match(/(.*)\s\(x(\d+)\)/);
             const nama = match ? match[1] : str;
-            const qty = match ? match[2] : '-';
-            return [i + 1, nama, qty, '-', '-']; 
+            const qty = match ? match[2] : '1'; // Default qty 1 jika tidak ada (x..)
+            
+            return [i + 1, nama, qty, '-', '-'];
         });
     }
 
-    // Render Table
+    // --- RENDER TABEL ---
     autoTable(doc, {
         startY: currentY,
         head: head,
         body: body,
         theme: 'grid',
         headStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], lineWidth: 0.1, halign: 'center' },
-        styles: { fontSize: 9, cellPadding: 2 },
+        styles: { fontSize: 9, cellPadding: 2, valign: 'middle' }, // valign middle agar rapi
         columnStyles: { 
             0: { halign: 'center', cellWidth: 10 }, 
-            2: { halign: 'center', cellWidth: 15 }, // Qty Center
-            3: { halign: 'right' }, // Harga Kanan
-            4: { halign: 'right' }  // Subtotal Kanan
-        }
+            1: { cellWidth: 'auto' }, // Biarkan kolom nama buku fleksibel
+            2: { halign: 'center', cellWidth: 15 }, 
+            3: { halign: 'right', cellWidth: 25 }, 
+            4: { halign: 'right', cellWidth: 25 }
+        },
+        // Pastikan tabel tidak menabrak footer halaman jika item sangat banyak
+        margin: { bottom: 30 }
     });
-
     // --- 4. SUMMARY FOOTER ---
     currentY = doc.lastAutoTable.finalY + 5;
     const rightX = pageWidth - margin.right;
     
-    const totalDiskon = Number(data.totalDiskon || 0);
-    const netRefund = Math.abs(data.jumlah || 0);
-    // Estimasi nilai barang total (Net Refund + Diskon jika ada)
-    const subTotal = (data.nilaiBarangRetur || netRefund) + totalDiskon;
+    // Ambil Total dari data parent
+    let netRefund = Math.abs(Number(data.jumlah || data.totalHarga || 0));
+    
+    // JIKA Total Parent 0 (atau null), PAKAI TOTAL HITUNGAN DARI TABEL DI ATAS
+    if (netRefund === 0 && calculatedTotal > 0) {
+        netRefund = calculatedTotal;
+    }
 
     const summaryData = [
-        { label: 'Total Nilai Barang:', value: formatCurrency(subTotal) },
-        totalDiskon > 0 ? { label: 'Total Potongan Retur:', value: `(${formatCurrency(totalDiskon)})` } : null,
         { label: 'Total Pengembalian:', value: formatCurrency(netRefund), bold: true },
-    ].filter(Boolean);
+    ];
 
     summaryData.forEach(row => {
         doc.setFontSize(10);
@@ -158,7 +186,8 @@ const buildDoc = (data) => {
     }
     
     doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-    // doc.text(terms[0], margin.left, footerY);
+    doc.text(terms[0], margin.left, footerY);
+    doc.text(terms[1], margin.left, footerY + 4);
 
     return doc;
 };

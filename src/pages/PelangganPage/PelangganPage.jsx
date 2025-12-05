@@ -131,7 +131,7 @@ export default function PelangganPage() {
             render: (tel) => tel || '-',
         },
         {
-            title: 'Status Spesial',
+            title: 'Status',
             dataIndex: 'isSpesial',
             key: 'isSpesial',
             align: 'center',

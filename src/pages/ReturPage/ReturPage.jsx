@@ -85,18 +85,41 @@ const ReturPage = () => {
     };
 
     // --- PDF / PRINT ---
+   // --- PDF / PRINT ---
+ // --- PDF / PRINT ---
     const handlePrintTransaction = (record) => {
         try {
+            // 1. CARI ARRAY DETAIL
+            // Cek field mana yang menyimpan array item di Firebase Anda (biasanya 'items', 'detailItems', atau 'listBuku')
+            const rawItems = record.items || record.detailItems || record.listBuku;
+
+            let itemsToPrint = [];
+
+            // 2. LOGIKA PENENTUAN BARIS
+            if (Array.isArray(rawItems) && rawItems.length > 0) {
+                // KASUS A: Ada detail item (4 buku = 4 baris)
+                // Kita gunakan data ini langsung agar PDF merender banyak baris
+                itemsToPrint = rawItems;
+            } else {
+                // KASUS B: Data lama / tidak ada detail (Fallback ke 1 baris)
+                itemsToPrint = [{
+                    judulBuku: record.judul || 'Retur Barang',
+                    qty: record.perubahan,
+                    hargaSatuan: 0, 
+                    subtotal: record.totalHarga || record.jumlah || 0
+                }];
+            }
+
+            // 3. SUSUN DATA PDF
             const dataToPrint = {
                 ...record,
                 id: record.id, 
                 nomorInvoice: record.refId, 
                 tanggal: record.timestamp,
-                itemsReturDetail: [{
-                    judulBuku: record.judul,
-                    qty: record.perubahan,
-                    harga: record.totalHarga || 0 // Masukkan harga jika ada
-                }],
+                
+                // INI KUNCINYA: Kirim array yang sudah dideteksi di atas
+                itemsReturDetail: itemsToPrint,
+                
                 keterangan: record.keterangan
             };
 
@@ -109,7 +132,6 @@ const ReturPage = () => {
             message.error("Gagal membuat PDF");
         }
     };
-
     const handleClosePreviewModal = () => { 
         setIsPreviewModalVisible(false); 
         if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); 
@@ -154,8 +176,8 @@ const ReturPage = () => {
         { 
             // KOLOM BARU: NOMINAL
             title: "Nominal", 
-            dataIndex: 'jumlah', // Pastikan field ini tersimpan di DB, atau ganti 'nominal'
-            key: 'jumlah', 
+            dataIndex: 'jumlahKeluar', // Pastikan field ini tersimpan di DB, atau ganti 'nominal'
+            key: 'jumlahKeluar', 
             align: 'right', 
             width: 140, 
             render: (val) => <Text>{currencyFormatter(val)}</Text> 

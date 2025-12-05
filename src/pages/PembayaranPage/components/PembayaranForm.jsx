@@ -8,7 +8,7 @@ import dayjs from 'dayjs';
 import { v4 as uuidv4 } from 'uuid';
 
 // IMPORT FIREBASE
-import { db, storage } from '../../../api/firebase';
+import { db, storage } from '../../../api/firebase'; // Sesuaikan path ini
 import { 
     ref, update, get, query, orderByChild, equalTo, 
     limitToLast, onValue, startAt, endAt
@@ -30,7 +30,6 @@ const generateTransactionId = () => {
     return `PJ-${dateCode}-${uniquePart}`;
 };
 
-// Helper untuk preview gambar
 const getBase64 = (file) =>
     new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -47,12 +46,13 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
     const [searchText, setSearchText] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     
-    // State untuk Upload & Preview Gambar
+    // Upload & Preview
     const [fileList, setFileList] = useState([]);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
     
+    // Data List
     const [invoiceList, setInvoiceList] = useState([]); 
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]); 
     const [paymentAllocations, setPaymentAllocations] = useState({});
@@ -60,7 +60,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
     const [isSearching, setIsSearching] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    // --- 1. USE EFFECT: DEBOUNCE SEARCH ---
+    // --- 1. DEBOUNCE SEARCH ---
     useEffect(() => {
         const timer = setTimeout(() => {
             setDebouncedSearch(searchText);
@@ -68,17 +68,20 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         return () => clearTimeout(timer);
     }, [searchText]);
 
-    // --- 2. USE EFFECT: STREAM DATA (Realtime) ---
+    // --- 2. STREAM DATA (HANYA SAAT INPUT BARU) ---
     useEffect(() => {
-        if (!open) return;
+        // PENTING: Jika sedang EDIT atau Modal Tutup, JANGAN jalankan stream ini.
+        if (!open || initialValues) return;
 
         setIsSearching(true);
         let q;
         const dbRef = ref(db, 'transaksiJualBuku');
 
         if (!debouncedSearch) {
+            // Default: 50 Invoice Belum Lunas Terakhir
             q = query(dbRef, orderByChild('statusPembayaran'), equalTo('Belum'), limitToLast(50));
         } else {
+            // Search by Nama Pelanggan
             q = query(dbRef, orderByChild('namaPelanggan'), startAt(debouncedSearch), endAt(debouncedSearch + "\uf8ff"));
         }
 
@@ -87,9 +90,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
             if (snapshot.exists()) {
                 snapshot.forEach(child => {
                     const val = child.val();
-                    if (debouncedSearch && val.statusPembayaran !== 'Belum') {
-                        return;
-                    }
+                    // Hitung sisa tagihan real
                     list.push({
                         id: child.key,
                         ...val,
@@ -106,47 +107,88 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         });
 
         return () => unsubscribe();
-    }, [open, debouncedSearch]);
+    }, [open, debouncedSearch, initialValues]);
 
-    // --- INITIALIZATION ---
+    // --- 3. INITIALIZATION (SETUP MODE EDIT / BARU) ---
     useEffect(() => {
         if (!open) {
             resetFormState();
         } else {
             setIsSaving(false);
+
             if (initialValues) {
-                // MODE EDIT
+                // === MODE EDIT ===
                 const currentJumlah = Math.abs(initialValues.jumlahBayar || initialValues.jumlah || 0);
+
+                // A. Set Nilai Form
                 form.setFieldsValue({
                     ...initialValues,
                     tanggal: initialValues.tanggal ? dayjs(initialValues.tanggal) : dayjs(),
                     jumlahTotal: currentJumlah,
                 });
 
+                // B. Handle Invoice & Allocations
                 if (initialValues.idTransaksi) {
+                    // Pastikan idTransaksi jadi Array
                     const ids = Array.isArray(initialValues.idTransaksi) ? initialValues.idTransaksi : [initialValues.idTransaksi];
                     setSelectedInvoiceIds(ids);
+
+                    // Set alokasi pembayaran per invoice
                     const alloc = {};
-                    ids.forEach(id => { alloc[id] = currentJumlah; });
+                    ids.forEach(id => { alloc[id] = currentJumlah; }); 
                     setPaymentAllocations(alloc);
+
+                    // === PENTING: FETCH MANUAL INVOICE YANG DIEDIT ===
+                    // Kita ambil data invoice ini walau statusnya sudah LUNAS agar muncul di tabel
+                    setIsSearching(true);
+                    
+                    const fetchSpecificInvoices = async () => {
+                        try {
+                            const promises = ids.map(id => get(ref(db, `transaksiJualBuku/${id}`)));
+                            const snapshots = await Promise.all(promises);
+                            const specificList = [];
+
+                            snapshots.forEach(snap => {
+                                if (snap.exists()) {
+                                    const val = snap.val();
+                                    specificList.push({
+                                        id: snap.key,
+                                        ...val,
+                                        sisaTagihan: (val.totalTagihan || 0) - (val.jumlahTerbayar || 0)
+                                    });
+                                }
+                            });
+                            
+                            // Timpa invoiceList hanya dengan data yang sedang diedit
+                            setInvoiceList(specificList); 
+                        } catch (err) {
+                            console.error("Gagal ambil data edit:", err);
+                            message.error("Gagal mengambil data invoice asli");
+                        } finally {
+                            setIsSearching(false);
+                        }
+                    };
+                    
+                    fetchSpecificInvoices();
                 }
-                
-                // --- TAMPILKAN PREVIEW SAAT EDIT ---
+
+                // C. Handle Gambar Preview
                 if (initialValues.buktiUrl) {
                     setFileList([{ 
                         uid: '-1', 
-                        name: 'Bukti Pembayaran Existing', 
+                        name: 'Bukti Tersimpan', 
                         status: 'done', 
-                        url: initialValues.buktiUrl // URL ini akan otomatis dirender oleh listType="picture-card"
+                        url: initialValues.buktiUrl 
                     }]);
                 }
+
             } else {
-                // MODE BARU
+                // === MODE BARU ===
                 form.resetFields();
                 form.setFieldsValue({ tanggal: dayjs(), jumlahTotal: 0 });
             }
         }
-    }, [initialValues, open]);
+    }, [initialValues, open, form]);
 
     const resetFormState = () => {
         form.resetFields();
@@ -162,7 +204,6 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
 
     // --- UPLOAD HANDLERS ---
     const handleCancelPreview = () => setPreviewOpen(false);
-
     const handlePreview = async (file) => {
         if (!file.url && !file.preview) {
             file.preview = await getBase64(file.originFileObj);
@@ -171,25 +212,18 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         setPreviewOpen(true);
         setPreviewTitle(file.name || file.url.substring(file.url.lastIndexOf('/') + 1));
     };
-
     const handleUploadChange = ({ fileList: newFileList }) => setFileList(newFileList);
-
     const beforeUploadFn = (file) => {
         const isImage = file.type.startsWith('image/');
         if (!isImage) {
-            message.error('Hanya boleh upload file gambar (JPG/PNG/GIF)!');
-            // Mencegah file ditambahkan ke list jika bukan gambar
-            return Upload.LIST_IGNORE; 
+            message.error('Hanya boleh upload file gambar!');
+            return Upload.LIST_IGNORE;
         }
-        // Return false agar tidak auto-upload ke server saat dipilih
-        return false;
+        return false; 
     };
 
-
-    // --- LOGIC HELPER LAINNYA ---
-    const handleSearch = (e) => {
-        setSearchText(e.target.value); 
-    };
+    // --- LOGIC FORM ---
+    const handleSearch = (e) => setSearchText(e.target.value); 
 
     const calculateTotal = (allocations) => {
         const total = Object.values(allocations).reduce((a, b) => a + (b || 0), 0);
@@ -210,13 +244,12 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
             
             selectedRows.forEach(row => {
                 if (!newAllocations[row.id]) {
-                    newAllocations[row.id] = row.sisaTagihan;
+                    newAllocations[row.id] = row.sisaTagihan > 0 ? row.sisaTagihan : 0;
                 }
             });
+            // Bersihkan allocation yang tidak terpilih
             Object.keys(newAllocations).forEach(key => {
-                if (!selectedRowKeys.includes(key)) {
-                    delete newAllocations[key];
-                }
+                if (!selectedRowKeys.includes(key)) delete newAllocations[key];
             });
 
             setPaymentAllocations(newAllocations);
@@ -224,7 +257,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         },
     };
 
-    // --- HANDLE SAVE (SIMPAN) ---
+    // --- SIMPAN ---
     const handleSave = async (values) => {
         if (selectedInvoiceIds.length === 0) {
             message.error("Pilih minimal satu invoice!");
@@ -235,16 +268,11 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         message.loading({ content: 'Menyimpan pembayaran...', key: 'saving' });
         
         try {
-            // 1. Upload Bukti Baru (jika ada)
+            // 1. Upload Bukti
             let buktiUrl = initialValues?.buktiUrl || null;
-            // Cek jika ada file baru yang diupload (originFileObj ada)
             const buktiFile = (fileList.length > 0 && fileList[0].originFileObj) ? fileList[0].originFileObj : null;
             
-            // Jika user menghapus gambar existing di mode edit
-            if (fileList.length === 0 && initialValues?.buktiUrl) {
-                 buktiUrl = null;
-                 // Opsional: Hapus file lama dari storage jika perlu, tapi untuk keamanan biasanya dibiarkan.
-            }
+            if (fileList.length === 0 && initialValues?.buktiUrl) buktiUrl = null; // Gambar dihapus user
 
             if (buktiFile) {
                 const safeName = (values.keterangan || 'bukti').substring(0, 10).replace(/[^a-z0-9]/gi, '_');
@@ -256,7 +284,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
             const updates = {};
             const timestampNow = dayjs(values.tanggal).valueOf();
 
-            // 2. Loop Process per Invoice
+            // 2. Loop per Invoice
             for (const invId of selectedInvoiceIds) {
                 const amount = paymentAllocations[invId];
                 if (!amount || amount <= 0) continue; 
@@ -270,6 +298,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                 const dbInv = invSnap.val();
                 let basePaid = Number(dbInv.jumlahTerbayar || 0);
                 
+                // Jika edit, kembalikan saldo lama dulu
                 if (isSingleEdit) {
                     const oldAmount = initialValues.jumlah || 0;
                     basePaid -= oldAmount;
@@ -283,7 +312,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                 updates[`transaksiJualBuku/${invId}/statusPembayaran`] = newStatus;
                 updates[`transaksiJualBuku/${invId}/updatedAt`] = { ".sv": "timestamp" };
 
-                // Catat Riwayat di Invoice
+                // Catat Riwayat
                 updates[`transaksiJualBuku/${invId}/riwayatPembayaran/${mutasiId}`] = { 
                     tanggal: timestampNow, 
                     jumlah: amount, 
@@ -291,7 +320,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                     keterangan: values.keterangan || `Pembayaran ${dbInv.nomorInvoice}` 
                 };
 
-                // Catat Mutasi
+                // Catat Mutasi Global
                 const dataMutasi = {
                     id: mutasiId,
                     tipe: FIXED_TIPE, 
@@ -314,7 +343,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
             }
 
             await update(ref(db), updates);
-            message.success({ content: 'Pembayaran berhasil disimpan!', key: 'saving' });
+            message.success({ content: 'Berhasil disimpan!', key: 'saving' });
             onCancel();
 
         } catch (error) {
@@ -325,11 +354,11 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         }
     };
 
-    // --- HANDLE DELETE (HAPUS) ---
+    // --- HAPUS ---
     const handleDelete = () => {
         modal.confirm({
             title: 'Hapus Pembayaran?',
-            content: 'Saldo invoice akan dikembalikan. Yakin?',
+            content: 'Saldo invoice akan dikembalikan (Tagihan bertambah lagi). Yakin?',
             okText: 'Hapus',
             okType: 'danger',
             onOk: async () => {
@@ -356,7 +385,6 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                             updates[`transaksiJualBuku/${invId}/jumlahTerbayar`] = finalPaid;
                             updates[`transaksiJualBuku/${invId}/statusPembayaran`] = newStatus;
                             updates[`transaksiJualBuku/${invId}/riwayatPembayaran/${mutasiId}`] = null;
-                            updates[`transaksiJualBuku/${invId}/updatedAt`] = { ".sv": "timestamp" };
                         }
                     }
 
@@ -372,7 +400,6 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
         });
     };
 
-    // --- TABLE COLUMNS ---
     const columns = [
         { 
             title: 'Pelanggan / Invoice', 
@@ -404,6 +431,7 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                     formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
                     parser={v => v.replace(/[^\d]/g, '')} 
                     min={0}
+                    // Disable input jika invoice ini tidak diceklis
                     disabled={!selectedInvoiceIds.includes(r.id)} 
                     style={{ width: '100%' }}
                 /> 
@@ -430,12 +458,24 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
             >
                 <Form form={form} layout="vertical" onFinish={handleSave}>
                     
-                    <Alert 
-                        message="Pilih invoice di bawah ini untuk dibayar. Data akan disimpan per invoice (split)." 
-                        type="info" 
-                        showIcon 
-                        style={{marginBottom: 16}} 
-                    />
+                    {/* ALERT MODE EDIT */}
+                    {initialValues ? (
+                        <Alert 
+                            message="Mode Edit" 
+                            description="Anda sedang mengedit nominal/bukti pembayaran. Pencarian invoice lain dinonaktifkan untuk menjaga konsistensi data."
+                            type="warning" 
+                            showIcon 
+                            style={{marginBottom: 16}} 
+                        />
+                    ) : (
+                        <Alert 
+                            message="Pilih Invoice" 
+                            description="Cari nama pelanggan di bawah, lalu centang invoice yang ingin dibayar."
+                            type="info" 
+                            showIcon 
+                            style={{marginBottom: 16}} 
+                        />
+                    )}
 
                     <Row gutter={16}>
                         <Col span={12}>
@@ -452,16 +492,19 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
 
                     <div style={{ marginBottom: 16 }}>
                         <Input 
-                            placeholder="Cari Nama Pelanggan (Case Sensitive)..." 
+                            placeholder="Cari Nama Pelanggan..." 
                             prefix={<SearchOutlined />} 
                             value={searchText}
                             onChange={handleSearch}
                             allowClear
+                            // DISABLE SEARCH SAAT EDIT AGAR TIDAK EROR / TINDIH DATA
+                            disabled={!!initialValues} 
                         />
                     </div>
 
                     <Table 
-                        rowSelection={rowSelection} 
+                        // MATIKAN SELEKSI ROW SAAT EDIT (Hanya Read-only View)
+                        rowSelection={initialValues ? undefined : rowSelection} 
                         columns={columns} 
                         dataSource={invoiceList} 
                         rowKey="id"
@@ -493,34 +536,28 @@ const PembayaranForm = ({ open, onCancel, initialValues }) => {
                         <Input.TextArea rows={2} placeholder="Contoh: Transfer BCA" />
                     </Form.Item>
                     
-                    {/* --- BAGIAN UPLOAD YANG DIPERBARUI --- */}
                     <Form.Item name="bukti" label="Upload Bukti Transfer (Gambar)">
                         <Upload 
-                            accept="image/*"             // 1. Hanya menerima file gambar di dialog
-                            listType="picture-card"      // 2. Tampilan kartu preview
+                            accept="image/*"
+                            listType="picture-card"
                             maxCount={1} 
                             fileList={fileList}
-                            onPreview={handlePreview}    // Handler untuk klik preview (mata)
+                            onPreview={handlePreview}
                             onChange={handleUploadChange}
-                            beforeUpload={beforeUploadFn} // 3. Validasi tipe file sebelum upload
-                            showUploadList={{
-                                showPreviewIcon: true,
-                                showRemoveIcon: true,
-                            }}
+                            beforeUpload={beforeUploadFn}
+                            showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
                         >
-                            {/* Tampilkan tombol hanya jika belum ada file */}
-                            {fileList.length < 1 ? (
+                            {fileList.length < 1 && (
                                 <div>
                                     <PlusOutlined />
                                     <div style={{ marginTop: 8 }}>Upload</div>
                                 </div>
-                             ) : null}
+                            )}
                         </Upload>
                     </Form.Item>
                 </Form>
             </Modal>
 
-            {/* MODAL UNTUK PREVIEW GAMBAR BESAR */}
             <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={handleCancelPreview}>
                 <img alt="bukti transfer" style={{ width: '100%' }} src={previewImage} />
             </Modal>

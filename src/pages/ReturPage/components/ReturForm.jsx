@@ -108,7 +108,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         setIsSearching(false);
     };
 
-    // --- LOAD DATA (EDIT MODE - FIX QTY RETUR & UNKNOWN BOOK) ---
+    // --- LOAD DATA (EDIT MODE) ---
     const loadInvoiceForEdit = async (invoiceId, editData) => {
         try {
             message.loading({ content: 'Memuat data retur...', key: 'load' });
@@ -125,16 +125,12 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             setSelectedInvoice(invoiceData);
 
             // 2. Mapping Item dengan Data Tersimpan
-            // editData.itemsReturDetail berisi data retur yg tersimpan sebelumnya
             const savedDetails = editData.itemsReturDetail || [];
             const originalItems = invoiceData.items || [];
 
             const mappedItems = await Promise.all(originalItems.map(async (item) => {
-                // Cari apakah item ini pernah diretur sebelumnya
                 const savedItem = savedDetails.find(s => s.idBuku === item.idBuku);
                 
-                // --- FIX JUDUL BUKU ---
-                // Priority: Data Tersimpan > Data Invoice > Master Buku DB
                 let judul = savedItem?.judulBuku || item.judulBuku || item.namaBuku || item.judul;
                 
                 if (!judul || judul === 'Unknown') {
@@ -156,9 +152,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     jumlah: Number(item.jumlah), // Qty Awal Beli
                     diskonPersen: Number(item.diskonPersen || 0),
                     
-                    // --- FIX QTY RETUR (EDIT MODE) ---
-                    // Jika ada savedItem (berarti pernah diretur), ambil qty-nya.
-                    // Jika tidak, berarti item ini dulu tidak diretur (0).
+                    // Qty Retur yang tersimpan
                     qtyRetur: savedItem ? Number(savedItem.qty) : 0 
                 };
             }));
@@ -172,7 +166,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         }
     };
 
-    // --- SEARCH INVOICE (Hanya Lunas / Partial) ---
+    // --- SEARCH INVOICE ---
     const handleSearchInvoice = (val) => {
         if (searchTimeout.current) clearTimeout(searchTimeout.current);
         setIsSearching(true);
@@ -183,19 +177,16 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                 let results = [];
 
                 if (!keyword) {
-                    // Default: Ambil 20 transaksi terakhir
                     const q = query(ref(db, 'transaksiJualBuku'), limitToLast(20));
                     const snap = await get(q);
                     if (snap.exists()) results = Object.keys(snap.val()).map(k => ({ id: k, ...snap.val()[k] }));
                 } else {
-                    // Search by Nama
                     const qNama = query(ref(db, 'transaksiJualBuku'), orderByChild('namaPelanggan'), startAt(keyword), endAt(keyword + "\uf8ff"));
                     const snapNama = await get(qNama);
                     if (snapNama.exists()) {
                         const raw = snapNama.val();
                         results = Object.keys(raw).map(k => ({ id: k, ...raw[k] }));
                     }
-                    // Fallback Search by No Invoice
                     if (results.length === 0) {
                         const qInv = query(ref(db, 'transaksiJualBuku'), orderByChild('nomorInvoice'), startAt(keyword), endAt(keyword + "\uf8ff"));
                         const snapInv = await get(qInv);
@@ -206,7 +197,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     }
                 }
 
-                // Filter hanya yang punya item buku
                 results = results.filter(r => r.items && r.items.length > 0);
                 results.sort((a, b) => b.tanggal - a.tanggal);
 
@@ -216,7 +206,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         }, 500);
     };
 
-    // --- SELECT INVOICE BARU (MODE INPUT BARU) ---
+    // --- SELECT INVOICE BARU ---
     const handleSelectInvoice = async (id) => {
         const tx = invoiceOptions.find(t => t.id === id);
         if (!tx) return;
@@ -226,7 +216,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
 
         try {
             const items = tx.items || [];
-            // Ambil detail buku lengkap
             const itemsWithTitle = await Promise.all(items.map(async (item) => {
                 let judul = item.judulBuku || item.namaBuku || item.judul;
                 
@@ -248,16 +237,12 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     hargaSatuan: Number(item.hargaSatuan),
                     jumlah: Number(item.jumlah),
                     diskonPersen: Number(item.diskonPersen || 0),
-                    
-                    // --- DEFAULT VALUE QTY (BARU) ---
-                    // Kalau baru pilih invoice, semua item retur default-nya 0
                     qtyRetur: 0 
                 };
             }));
 
             setReturItems(itemsWithTitle);
             
-            // Auto fill fields
             form.setFieldsValue({
                 keterangan: `Retur dari Invoice ${tx.nomorInvoice}`,
                 jumlah: 0,
@@ -277,7 +262,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         const newItems = [...returItems];
         const item = newItems[index];
         
-        // Validasi Max Qty (Tidak boleh retur lebih dari beli)
         const max = Number(item.jumlah);
         let input = Number(val || 0);
         if (input < 0) input = 0;
@@ -290,19 +274,16 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
 
     const handleTotalDiskonChange = (val) => {
         setIsManualDiskon(true);
-        // Recalculate dengan diskon manual baru
         const gross = returItems.reduce((acc, curr) => acc + (curr.qtyRetur * curr.hargaSatuan), 0);
         const net = gross - (val || 0);
         form.setFieldsValue({ jumlah: net < 0 ? 0 : net });
     };
 
     const recalculateTotal = (items) => {
-        // Hitung Gross Total (Harga x Qty Retur)
         const gross = items.reduce((acc, curr) => acc + (curr.qtyRetur * curr.hargaSatuan), 0);
         
         let discount = Number(form.getFieldValue('totalDiskon') || 0);
 
-        // Jika mode otomatis, hitung diskon proporsional dari item
         if (!isManualDiskon) {
             discount = items.reduce((acc, curr) => {
                 const subGross = curr.qtyRetur * curr.hargaSatuan;
@@ -316,9 +297,8 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         form.setFieldsValue({ jumlah: net < 0 ? 0 : net });
     };
 
-    // --- SIMPAN TRANSAKSI ---
+    // --- SIMPAN TRANSAKSI (TANPA EDIT INVOICE ASLI) ---
     const handleSave = async (values) => {
-        // Validasi: Harus ada item yang diretur
         const itemsToRetur = returItems.filter(i => i.qtyRetur > 0);
         if (itemsToRetur.length === 0) {
             message.error("Belum ada buku yang diretur (Qty masih 0)");
@@ -343,59 +323,17 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             const timestamp = values.tanggal.valueOf();
             const invoiceId = values.idTransaksi;
 
-            // 2. Prepare Data Update Invoice & Stok
-            const invRef = `transaksiJualBuku/${invoiceId}`;
-            
-            // Ambil data invoice terbaru untuk konsistensi
-            const snap = await get(ref(db, invRef));
-            if(!snap.exists()) throw new Error("Invoice hilang!");
+            // Ambil data invoice sekedar untuk info pelanggan & nomor nota
+            const snap = await get(ref(db, `transaksiJualBuku/${invoiceId}`));
+            if(!snap.exists()) throw new Error("Invoice tidak ditemukan!");
             const invData = snap.val();
 
-            let newTotalTagihan = 0; 
-            let newTotalQty = 0;
-            
-            // Reconstruct Items Invoice (Kurangi Qty Beli sesuai Retur)
-            const updatedInvItems = (invData.items || []).map(invItem => {
-                const returItem = itemsToRetur.find(r => r.idBuku === invItem.idBuku);
-                if (returItem) {
-                    // Kurangi qty di invoice
-                    return { ...invItem, jumlah: Number(invItem.jumlah) - Number(returItem.qtyRetur) };
-                }
-                return invItem;
-            });
+            // ------------------------------------------------------------------
+            // REVISI: KITA TIDAK MENGUBAH DATA INVOICE (transaksiJualBuku)
+            // HANYA UPDATE STOK BUKU & BUAT RECORD RETUR
+            // ------------------------------------------------------------------
 
-            // Hitung ulang tagihan invoice setelah barang dikurangi
-            updatedInvItems.forEach(i => {
-                const q = Number(i.jumlah);
-                const h = Number(i.hargaSatuan);
-                const d = Number(i.diskonPersen || 0);
-                newTotalTagihan += (q * h * (1 - d/100));
-                newTotalQty += q;
-            });
-            // Terapkan diskon global invoice jika ada
-            newTotalTagihan = newTotalTagihan - (Number(invData.diskonLain||0)) + (Number(invData.biayaTentu||0));
-
-            // Logic Saldo / Refund
-            const currentPaid = Number(invData.jumlahTerbayar || 0);
-            let refundAmount = 0;
-            let newPaidAmount = currentPaid;
-
-            if (currentPaid > newTotalTagihan) {
-                refundAmount = currentPaid - newTotalTagihan;
-                newPaidAmount = newTotalTagihan; // Balance invoice jadi Lunas pas
-            }
-            const newStatus = newPaidAmount >= newTotalTagihan ? 'Lunas' : 'Belum';
-
-            // --- UPDATE BATCH ---
-            // A. Update Invoice
-            updates[`${invRef}/items`] = updatedInvItems;
-            updates[`${invRef}/totalTagihan`] = newTotalTagihan;
-            updates[`${invRef}/totalQty`] = newTotalQty;
-            updates[`${invRef}/jumlahTerbayar`] = newPaidAmount;
-            updates[`${invRef}/statusPembayaran`] = newStatus;
-            updates[`${invRef}/updatedAt`] = { ".sv": "timestamp" };
-
-            // B. Update Stok & History
+            // A. Update Stok & History (Kembalikan ke Gudang)
             const itemsDetailRecord = [];
             for (const item of itemsToRetur) {
                 // Catat detail untuk record mutasi
@@ -407,10 +345,11 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     subtotal: item.qtyRetur * item.hargaSatuan
                 });
 
-                // Kembalikan Stok ke Gudang
+                // Logic Stok: Ambil stok terbaru dulu dari DB untuk akurasi
                 const bSnap = await get(ref(db, `buku/${item.idBuku}`));
                 if(bSnap.exists()) {
                     const stokNow = Number(bSnap.val().stok || 0);
+                    // TAMBAH STOK (Karena barang balik)
                     updates[`buku/${item.idBuku}/stok`] = stokNow + item.qtyRetur;
                     
                     // Log History Stok
@@ -426,19 +365,21 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                 }
             }
 
-            // C. Simpan Record (Retur)
+            // B. Simpan Record (Retur)
             // Nominal di buku kas adalah NEGATIF (Pengeluaran/Refund)
-            const nominalKeluar = refundAmount > 0 ? refundAmount : values.jumlah;
+            // Ini yang nanti akan dibaca sebagai pengurang hutang di Modal Riwayat Pelanggan
+            const nominalKeluar = values.jumlah; // Nilai positif dulu
 
             const mutasiData = {
                 id: returId,
-                tipe: 'pengeluaran', // Selalu pengeluaran
+                tipe: 'pengeluaran', // Selalu pengeluaran (Refund)
                 kategori: 'Retur Buku',
                 tanggal: timestamp,
-                jumlah: -Math.abs(nominalKeluar), // Negatif
+                jumlah: -Math.abs(nominalKeluar), // Simpan sbg Negatif di Mutasi
                 jumlahKeluar: Math.abs(nominalKeluar),
                 
                 idTransaksi: invoiceId,
+                nomorInvoice: invData.nomorInvoice, // Simpan referensi nomor invoice
                 namaPelanggan: invData.namaPelanggan || 'Umum',
                 keterangan: values.keterangan,
                 buktiUrl: buktiUrl,
@@ -448,14 +389,14 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                 itemsReturRingkas: itemsDetailRecord.map(i => `${i.judulBuku} (x${i.qty})`).join(', '),
                 totalDiskon: values.totalDiskon,
                 
-                // Composite Key untuk Indexing Cepat
+                // Composite Key untuk Indexing
                 index_kategori_tanggal: `Retur Buku_${timestamp}`
             };
 
             // Simpan di MUTASI (Kas Gabungan)
             updates[`mutasi/${returId}`] = mutasiData;
             
-            // Simpan di HISTORI RETUR (Stream Khusus)
+            // Simpan di HISTORI RETUR (Stream Khusus untuk Pelacakan)
             updates[`historiRetur/${returId}`] = {
                 ...mutasiData,
                 refId: invoiceId,
@@ -466,7 +407,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
 
             await update(ref(db), updates);
             
-            message.success({ content: 'Retur berhasil diproses!', key: 'save' });
+            message.success({ content: 'Retur berhasil diproses (Stok dikembalikan)!', key: 'save' });
             onCancel();
 
             // Opsional: Trigger Print Nota Retur
@@ -490,64 +431,43 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
     const handleDelete = () => {
         modal.confirm({
             title: 'Batalkan Retur?',
-            content: 'Stok buku akan ditarik kembali dan tagihan invoice dikembalikan seperti semula. Yakin?',
+            content: 'Stok buku akan ditarik kembali dari gudang. Invoice asli tetap utuh.',
             okType: 'danger',
             onOk: async () => {
                 setIsSaving(true);
                 try {
                     const returId = initialValues.id;
-                    const invoiceId = initialValues.idTransaksi;
                     const itemsDiretur = initialValues.itemsReturDetail || [];
                     const updates = {};
 
-                    // 1. Hapus Mutasi & History
+                    // 1. Hapus Mutasi & History Retur
                     updates[`mutasi/${returId}`] = null;
                     updates[`historiRetur/${returId}`] = null;
 
-                    // 2. Balikin Invoice & Stok
-                    const invSnap = await get(ref(db, `transaksiJualBuku/${invoiceId}`));
-                    if (invSnap.exists()) {
-                        const invData = invSnap.val();
-                        let updatedItems = [...(invData.items || [])];
-
-                        // Kembalikan Qty Invoice & Tarik Stok
-                        for (const rItem of itemsDiretur) {
-                            const idx = updatedItems.findIndex(i => i.idBuku === rItem.idBuku);
-                            if (idx >= 0) {
-                                updatedItems[idx].jumlah = Number(updatedItems[idx].jumlah) + Number(rItem.qty);
-                            }
+                    // 2. Tarik Kembali Stok (Karena batal retur = barang dianggap keluar lagi/terjual)
+                    // Kita tidak perlu mengupdate Invoice karena Invoice tidak pernah berubah.
+                    // Kita hanya perlu mengoreksi stok.
+                    for (const rItem of itemsDiretur) {
+                        const bSnap = await get(ref(db, `buku/${rItem.idBuku}`));
+                        if (bSnap.exists()) {
+                            const sNow = Number(bSnap.val().stok || 0);
+                            // KURANGI STOK (Batal retur)
+                            updates[`buku/${rItem.idBuku}/stok`] = sNow - Number(rItem.qty);
                             
-                            // Tarik stok dari gudang (krn batal retur -> barang dianggap terjual lagi)
-                            const bSnap = await get(ref(db, `buku/${rItem.idBuku}`));
-                            if (bSnap.exists()) {
-                                const sNow = Number(bSnap.val().stok || 0);
-                                updates[`buku/${rItem.idBuku}/stok`] = sNow - Number(rItem.qty);
-                                updates[`buku/${rItem.idBuku}/updatedAt`] = { ".sv": "timestamp" };
-                            }
+                            // Log History (Koreksi)
+                            const logId = push(ref(db, 'historiStok')).key;
+                            updates[`historiStok/${logId}`] = {
+                                bukuId: rItem.idBuku,
+                                judul: rItem.judulBuku,
+                                perubahan: -Number(rItem.qty), // Negatif (stok keluar lagi)
+                                keterangan: `Batal Retur ${returId}`,
+                                timestamp: dayjs().valueOf()
+                            };
                         }
-
-                        // Recalculate Invoice Totals
-                        let totalTagihan = 0; let totalQty = 0;
-                        updatedItems.forEach(i => {
-                            totalTagihan += (Number(i.jumlah) * Number(i.hargaSatuan) * (1 - (i.diskonPersen||0)/100));
-                            totalQty += Number(i.jumlah);
-                        });
-                        totalTagihan = totalTagihan - (Number(invData.diskonLain||0)) + (Number(invData.biayaTentu||0));
-
-                        // Reverse Refund (Uang yg sudah dikeluarin dianggap masuk lagi ke pembayaran invoice)
-                        const refundYgDibatalkan = Math.abs(initialValues.jumlah || 0);
-                        const paidBaru = Number(invData.jumlahTerbayar || 0) + refundYgDibatalkan;
-                        const statusBaru = paidBaru >= totalTagihan ? 'Lunas' : 'Belum';
-
-                        updates[`transaksiJualBuku/${invoiceId}/items`] = updatedItems;
-                        updates[`transaksiJualBuku/${invoiceId}/totalTagihan`] = totalTagihan;
-                        updates[`transaksiJualBuku/${invoiceId}/totalQty`] = totalQty;
-                        updates[`transaksiJualBuku/${invoiceId}/jumlahTerbayar`] = paidBaru;
-                        updates[`transaksiJualBuku/${invoiceId}/statusPembayaran`] = statusBaru;
                     }
 
                     await update(ref(db), updates);
-                    message.success('Retur dibatalkan.');
+                    message.success('Retur dibatalkan. Stok dikoreksi.');
                     onCancel();
                 } catch (e) {
                     message.error(e.message);
@@ -572,7 +492,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     value={r.qtyRetur} 
                     onChange={(v) => handleQtyChange(v, i)}
                     style={{ width: '100%' }}
-                    // Highlight input jika ada nilai retur
                     status={r.qtyRetur > 0 ? 'warning' : ''}
                 />
             )
@@ -602,7 +521,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     <Button key="save" type="primary" icon={<SaveOutlined />} loading={isSaving} onClick={() => form.submit()}>Proses Retur</Button>
                 ]}
             >
-                <Alert message="Retur akan mengembalikan stok buku ke gudang & mengurangi tagihan invoice." type="warning" showIcon style={{marginBottom: 20}} />
+                <Alert message="Mode Aman: Retur ini HANYA akan mengembalikan stok buku ke gudang dan mencatat pengeluaran. Tagihan Invoice Asli TIDAK akan berubah." type="info" showIcon style={{marginBottom: 20}} />
                 
                 <Form form={form} layout="vertical" onFinish={handleSave}>
                     <Row gutter={16}>
@@ -621,11 +540,10 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
     filterOption={false}
     notFoundContent={isSearching ? <Spin size="small" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
     disabled={!!initialValues}
-    listHeight={250} // Tambahan agar list lebih panjang
+    listHeight={250}
 >
     {invoiceOptions.map(i => (
         <Option key={i.id} value={i.id}>
-            {/* TAMPILAN BARU: Nama - No Invoice (Total Rp xxx) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>
                     <span style={{ fontWeight: 500 }}>{i.namaPelanggan}</span>
@@ -642,7 +560,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                         </Col>
                     </Row>
 
-                    {/* TABLE ITEM RETUR */}
                     {selectedInvoice && (
                         <div style={{ marginBottom: 20, border: '1px solid #f0f0f0', borderRadius: 8 }}>
                             <Table 
