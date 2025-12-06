@@ -11,7 +11,7 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/id';
 
 // UTILS & HOOKS
-import { currencyFormatter } from '../../utils/formatters'; // Pastikan import ini ada
+import { currencyFormatter } from '../../utils/formatters'; 
 import { useReturStream } from '../../hooks/useFirebaseData'; 
 import useDebounce from '../../hooks/useDebounce';
 import { generateNotaReturPDF } from '../../utils/notaretur'; 
@@ -25,7 +25,7 @@ const { Content } = Layout;
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
-// --- STYLING (Biru / Senada Pembayaran) ---
+// --- STYLING ---
 const styles = {
     pageContainer: { padding: '24px', backgroundColor: '#f0f5ff', minHeight: '100vh' }, 
     card: { borderRadius: 8, border: 'none', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', background: '#fff' },
@@ -60,48 +60,34 @@ const ReturPage = () => {
             data = data.filter(tx => 
                 (tx.id || '').toLowerCase().includes(q) ||
                 (tx.keterangan || '').toLowerCase().includes(q) ||
-                (tx.refId || '').toLowerCase().includes(q)
+                (tx.refId || '').toLowerCase().includes(q) ||
+                (tx.namaPelanggan || '').toLowerCase().includes(q)
             );
         }
 
+        // Default sort: Tanggal Terbaru
         data.sort((a, b) => b.timestamp - a.timestamp);
         return data;
     }, [returList, deferredSearch]);
 
     // --- HANDLERS ---
-    const handleTambah = () => { 
-        setEditingRetur(null); 
-        setIsModalOpen(true); 
-    };
+    const handleTambah = () => { setEditingRetur(null); setIsModalOpen(true); };
+    const handleEdit = (record) => { setEditingRetur({ ...record }); setIsModalOpen(true); };
     
-    const handleEdit = (record) => { 
-        setEditingRetur({ ...record }); 
-        setIsModalOpen(true); 
-    };
-
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setTimeout(() => setEditingRetur(null), 300);
     };
 
     // --- PDF / PRINT ---
-   // --- PDF / PRINT ---
- // --- PDF / PRINT ---
     const handlePrintTransaction = (record) => {
         try {
-            // 1. CARI ARRAY DETAIL
-            // Cek field mana yang menyimpan array item di Firebase Anda (biasanya 'items', 'detailItems', atau 'listBuku')
             const rawItems = record.items || record.detailItems || record.listBuku;
-
             let itemsToPrint = [];
 
-            // 2. LOGIKA PENENTUAN BARIS
             if (Array.isArray(rawItems) && rawItems.length > 0) {
-                // KASUS A: Ada detail item (4 buku = 4 baris)
-                // Kita gunakan data ini langsung agar PDF merender banyak baris
                 itemsToPrint = rawItems;
             } else {
-                // KASUS B: Data lama / tidak ada detail (Fallback ke 1 baris)
                 itemsToPrint = [{
                     judulBuku: record.judul || 'Retur Barang',
                     qty: record.perubahan,
@@ -110,16 +96,12 @@ const ReturPage = () => {
                 }];
             }
 
-            // 3. SUSUN DATA PDF
             const dataToPrint = {
                 ...record,
                 id: record.id, 
                 nomorInvoice: record.refId, 
                 tanggal: record.timestamp,
-                
-                // INI KUNCINYA: Kirim array yang sudah dideteksi di atas
                 itemsReturDetail: itemsToPrint,
-                
                 keterangan: record.keterangan
             };
 
@@ -132,33 +114,49 @@ const ReturPage = () => {
             message.error("Gagal membuat PDF");
         }
     };
+
     const handleClosePreviewModal = () => { 
         setIsPreviewModalVisible(false); 
         if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); 
         setPdfPreviewUrl(''); 
     };
 
-    const handleViewProof = (url) => {
-        if (!url) return;
-        window.open(url, '_blank');
-    };
+    const handleViewProof = (url) => { if (url) window.open(url, '_blank'); };
 
-    // --- TABLE COLUMNS (UPDATED) ---
+    // --- TABLE COLUMNS ---
     const columns = [
+        { 
+            title: "Tanggal", 
+            dataIndex: 'timestamp', 
+            key: 'timestamp', 
+            width: 120, 
+            fixed: 'left',
+            render: (t) => dayjs(t).format('DD MMM YYYY'),
+            sorter: (a, b) => a.timestamp - b.timestamp,
+        },
         { 
             title: "ID Retur", 
             dataIndex: 'id', 
             key: 'id', 
             width: 140,
-            render: (text) => <Text copyable style={{fontSize: 12}}>{text}</Text>
+            render: (text) => <Text copyable style={{fontSize: 12}}>{text}</Text>,
+            sorter: (a, b) => (a.id || '').localeCompare(b.id || ''),
         },
         { 
-            // JUDUL DIUBAH DARI REF. INVOICE KE ID TRANSAKSI
             title: "ID Transaksi", 
             dataIndex: 'refId', 
             key: 'refId',
             width: 160,
-            render: (text) => <Tag color="blue">{text || 'Non-Invoice'}</Tag>
+            render: (text) => <Tag color="blue">{text || 'Non-Invoice'}</Tag>,
+            sorter: (a, b) => (a.refId || '').localeCompare(b.refId || ''),
+        },
+        { 
+            title: "Nama Pelanggan", 
+            dataIndex: 'namaPelanggan', 
+            key: 'namaPelanggan',
+            width: 180,
+            render: (text) => <Text strong>{text || 'Umum'}</Text>,
+            sorter: (a, b) => (a.namaPelanggan || '').localeCompare(b.namaPelanggan || ''),
         },
         { 
             title: "Keterangan", 
@@ -167,27 +165,20 @@ const ReturPage = () => {
             render: (text) => <div style={{ fontSize: 13, color: '#595959' }}>{text || '-'}</div>
         },
         { 
-            title: "Tanggal", 
-            dataIndex: 'timestamp', 
-            key: 'timestamp', 
-            width: 120, 
-            render: (t) => dayjs(t).format('DD MMM YYYY') 
-        },
-        { 
-            // KOLOM BARU: NOMINAL
             title: "Nominal", 
-            dataIndex: 'jumlahKeluar', // Pastikan field ini tersimpan di DB, atau ganti 'nominal'
+            dataIndex: 'jumlahKeluar', 
             key: 'jumlahKeluar', 
             align: 'right', 
             width: 140, 
-            render: (val) => <Text>{currencyFormatter(val)}</Text> 
+            render: (val) => <Text>{currencyFormatter(val)}</Text>,
+            sorter: (a, b) => (a.jumlahKeluar || 0) - (b.jumlahKeluar || 0),
         },
         { 
             title: "Qty Masuk", 
             dataIndex: 'perubahan', 
             key: 'perubahan', 
             align: 'right', 
-            width: 100, 
+            width: 110, 
             render: (val) => <Text strong style={{ color: '#3f8600' }}>+{val}</Text> 
         },
         { 
@@ -201,11 +192,17 @@ const ReturPage = () => {
                     <Tooltip title="Cetak Bukti">
                         <Button type="text" icon={<PrinterOutlined />} onClick={() => handlePrintTransaction(r)} />
                     </Tooltip>
-                    {r.buktiUrl && (
-                         <Tooltip title="Lihat Foto">
-                            <Button type="text" icon={<EyeOutlined />} onClick={() => handleViewProof(r.buktiUrl)} />
-                        </Tooltip>
-                    )}
+                    
+                    {/* UPDATED: Tombol Lihat Bukti selalu muncul, tapi disabled jika kosong */}
+                    <Tooltip title="Lihat Bukti Foto">
+                        <Button 
+                            type="text" 
+                            icon={<EyeOutlined />} 
+                            onClick={() => handleViewProof(r.buktiUrl)} 
+                            disabled={!r.buktiUrl} // Disabled jika tidak ada URL
+                        />
+                    </Tooltip>
+
                     <Tooltip title="Edit">
                         <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(r)} />
                     </Tooltip>
@@ -231,9 +228,9 @@ const ReturPage = () => {
                             allowClear={false} 
                         />
                         <Input 
-                            placeholder="Cari ID, Keterangan..." 
+                            placeholder="Cari ID, Pelanggan, Keterangan..." 
                             prefix={<SearchOutlined />} 
-                            style={{ width: 240 }} 
+                            style={{ width: 260 }} 
                             onChange={(e) => setSearchText(e.target.value)} 
                             allowClear
                         />
@@ -249,7 +246,7 @@ const ReturPage = () => {
                     loading={loadingRetur} 
                     rowKey="id" 
                     size="middle"
-                    scroll={{ x: 1000 }}
+                    scroll={{ x: 1200 }} 
                     pagination={{ 
                         defaultPageSize: 10, 
                         showTotal: (total) => `Total ${total} Item Retur`,

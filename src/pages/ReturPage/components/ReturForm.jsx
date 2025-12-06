@@ -9,23 +9,17 @@ import { v4 as uuidv4 } from 'uuid';
 
 // FIREBASE
 import { db, storage } from '../../../api/firebase';
-import { ref, push, update, get, query, orderByChild, equalTo, limitToLast, startAt, endAt } from "firebase/database";
+// Pastikan import orderByKey ada
+import { ref, push, update, get, query, orderByChild, equalTo, limitToLast, startAt, endAt, orderByKey } from "firebase/database";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
-// PDF GENERATOR
+// PDF GENERATOR (Sesuaikan path import Anda)
 import { generateNotaReturPDF } from '../../../utils/notaretur'; 
 
 const { Text } = Typography;
 const { Option } = Select;
 
 const currencyFormatter = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
-
-// GENERATOR ID RETUR
-const generateReturId = () => {
-    const dateCode = dayjs().format('YYYYMMDD');
-    const uniquePart = Math.random().toString(36).substring(2, 6).toUpperCase(); 
-    return `RT-${dateCode}-${uniquePart}`;
-};
 
 // --- HELPER: PRINT NOTA RETUR ---
 const printNotaReturAction = (dataMutasi, originalInvoice) => {
@@ -80,7 +74,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             });
 
             if (initialValues.idTransaksi) {
-                // Panggil fungsi load khusus Edit
                 loadInvoiceForEdit(initialValues.idTransaksi, initialValues);
             }
             if (initialValues.buktiUrl) {
@@ -94,7 +87,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                 jumlah: 0, 
                 totalDiskon: 0 
             });
-            handleSearchInvoice(""); // Load default list
+            handleSearchInvoice(""); 
         }
     }, [initialValues, open, form]);
 
@@ -113,7 +106,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         try {
             message.loading({ content: 'Memuat data retur...', key: 'load' });
             
-            // 1. Ambil Invoice Asli
             const snapshot = await get(ref(db, `transaksiJualBuku/${invoiceId}`));
             if (!snapshot.exists()) {
                 message.error({ content: 'Invoice asal tidak ditemukan', key: 'load' });
@@ -124,7 +116,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             setInvoiceOptions([invoiceData]);
             setSelectedInvoice(invoiceData);
 
-            // 2. Mapping Item dengan Data Tersimpan
             const savedDetails = editData.itemsReturDetail || [];
             const originalItems = invoiceData.items || [];
 
@@ -149,10 +140,8 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     ...item,
                     judulBuku: judul,
                     hargaSatuan: Number(item.hargaSatuan),
-                    jumlah: Number(item.jumlah), // Qty Awal Beli
+                    jumlah: Number(item.jumlah), 
                     diskonPersen: Number(item.diskonPersen || 0),
-                    
-                    // Qty Retur yang tersimpan
                     qtyRetur: savedItem ? Number(savedItem.qty) : 0 
                 };
             }));
@@ -207,6 +196,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
     };
 
     // --- SELECT INVOICE BARU ---
+   // --- SELECT INVOICE BARU ---
     const handleSelectInvoice = async (id) => {
         const tx = invoiceOptions.find(t => t.id === id);
         if (!tx) return;
@@ -217,6 +207,7 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         try {
             const items = tx.items || [];
             const itemsWithTitle = await Promise.all(items.map(async (item) => {
+                // ... (LOGIC MAPPING ITEM BIARKAN SAMA) ...
                 let judul = item.judulBuku || item.namaBuku || item.judul;
                 
                 if (!judul || judul === 'Unknown') {
@@ -243,11 +234,15 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
 
             setReturItems(itemsWithTitle);
             
+            // === BAGIAN INI YANG DIUBAH ===
             form.setFieldsValue({
-                keterangan: `Retur dari Invoice ${tx.nomorInvoice}`,
+                // Contoh Hasil: "Retur SD AL AZHAR (Inv: SL-2025-001)"
+                keterangan: `Retur ${tx.namaPelanggan || 'Umum'} (Inv: ${tx.nomorInvoice})`, 
                 jumlah: 0,
                 totalDiskon: 0
             });
+            // ==============================
+
             setIsManualDiskon(false);
             message.success({ content: 'Silakan input jumlah retur', key: 'prep' });
 
@@ -256,7 +251,6 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             message.error({ content: 'Gagal menyiapkan item', key: 'prep' });
         }
     };
-
     // --- LOGIC PERHITUNGAN ---
     const handleQtyChange = (val, index) => {
         const newItems = [...returItems];
@@ -297,7 +291,50 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         form.setFieldsValue({ jumlah: net < 0 ? 0 : net });
     };
 
-    // --- SIMPAN TRANSAKSI (TANPA EDIT INVOICE ASLI) ---
+    // --- FUNGSI GENERATE ID URUT (Baru) ---
+    const getNewReturId = async () => {
+        const today = dayjs();
+        const year = today.format('YYYY');
+        const month = today.format('MM');
+        
+        // Format Prefix untuk Database Key: RJ-2025-01-
+        const prefix = `RJ-${year}-${month}-`; 
+
+        try {
+            // Cari data terakhir di historiRetur yang depannya RJ-2025-01-
+            const q = query(
+                ref(db, 'historiRetur'),
+                orderByKey(),
+                startAt(prefix),
+                endAt(prefix + "\uf8ff"),
+                limitToLast(1)
+            );
+
+            const snapshot = await get(q);
+            let nextSequence = 1;
+
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const lastKey = Object.keys(data)[0]; // misal: RJ-2025-01-0045
+                
+                // Ambil 4 digit terakhir
+                const parts = lastKey.split('-'); 
+                const lastNum = parseInt(parts[parts.length - 1]);
+                
+                if (!isNaN(lastNum)) {
+                    nextSequence = lastNum + 1;
+                }
+            }
+
+            // Return format: RJ-2025-01-0001
+            return `${prefix}${String(nextSequence).padStart(4, '0')}`;
+        } catch (error) {
+            console.error("Gagal generate ID:", error);
+            return `RJ-${year}-${month}-${Math.floor(Math.random() * 10000)}`;
+        }
+    };
+
+    // --- HANDLE SAVE (Definisi ada DI DALAM Component) ---
     const handleSave = async (values) => {
         const itemsToRetur = returItems.filter(i => i.qtyRetur > 0);
         if (itemsToRetur.length === 0) {
@@ -309,7 +346,13 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
         message.loading({ content: 'Menyimpan Retur...', key: 'save' });
 
         try {
-            // 1. Upload Bukti
+            // 1. GENERATE ID BARU (Async)
+            let returId = initialValues?.id;
+            if (!returId) {
+                returId = await getNewReturId(); 
+            }
+
+            // 2. Upload Bukti
             let buktiUrl = initialValues?.buktiUrl || null;
             const file = (values.bukti && values.bukti.length > 0) ? values.bukti[0].originFileObj : null;
             if (file) {
@@ -319,24 +362,16 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
             }
 
             const updates = {};
-            const returId = initialValues?.id || generateReturId();
             const timestamp = values.tanggal.valueOf();
             const invoiceId = values.idTransaksi;
 
-            // Ambil data invoice sekedar untuk info pelanggan & nomor nota
             const snap = await get(ref(db, `transaksiJualBuku/${invoiceId}`));
             if(!snap.exists()) throw new Error("Invoice tidak ditemukan!");
             const invData = snap.val();
 
-            // ------------------------------------------------------------------
-            // REVISI: KITA TIDAK MENGUBAH DATA INVOICE (transaksiJualBuku)
-            // HANYA UPDATE STOK BUKU & BUAT RECORD RETUR
-            // ------------------------------------------------------------------
-
-            // A. Update Stok & History (Kembalikan ke Gudang)
+            // A. Update Stok & History
             const itemsDetailRecord = [];
             for (const item of itemsToRetur) {
-                // Catat detail untuk record mutasi
                 itemsDetailRecord.push({
                     idBuku: item.idBuku,
                     judulBuku: item.judulBuku,
@@ -345,58 +380,45 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     subtotal: item.qtyRetur * item.hargaSatuan
                 });
 
-                // Logic Stok: Ambil stok terbaru dulu dari DB untuk akurasi
                 const bSnap = await get(ref(db, `buku/${item.idBuku}`));
                 if(bSnap.exists()) {
                     const stokNow = Number(bSnap.val().stok || 0);
-                    // TAMBAH STOK (Karena barang balik)
                     updates[`buku/${item.idBuku}/stok`] = stokNow + item.qtyRetur;
                     
-                    // Log History Stok
                     const logId = push(ref(db, 'historiStok')).key;
                     updates[`historiStok/${logId}`] = {
                         bukuId: item.idBuku,
                         judul: item.judulBuku,
-                        perubahan: item.qtyRetur, // Positif (nambah stok)
-                        keterangan: `Retur Invoice ${invData.nomorInvoice}`,
+                        perubahan: item.qtyRetur,
+                        keterangan: `Retur Invoice ${invData.nomorInvoice} (${returId})`,
                         refId: invoiceId,
                         timestamp: timestamp
                     };
                 }
             }
 
-            // B. Simpan Record (Retur)
-            // Nominal di buku kas adalah NEGATIF (Pengeluaran/Refund)
-            // Ini yang nanti akan dibaca sebagai pengurang hutang di Modal Riwayat Pelanggan
-            const nominalKeluar = values.jumlah; // Nilai positif dulu
+            // B. Simpan Record
+            const nominalKeluar = values.jumlah; 
 
             const mutasiData = {
                 id: returId,
-                tipe: 'pengeluaran', // Selalu pengeluaran (Refund)
+                tipe: 'pengeluaran',
                 kategori: 'Retur Buku',
                 tanggal: timestamp,
-                jumlah: -Math.abs(nominalKeluar), // Simpan sbg Negatif di Mutasi
+                jumlah: -Math.abs(nominalKeluar),
                 jumlahKeluar: Math.abs(nominalKeluar),
-                
                 idTransaksi: invoiceId,
-                nomorInvoice: invData.nomorInvoice, // Simpan referensi nomor invoice
+                nomorInvoice: invData.nomorInvoice,
                 namaPelanggan: invData.namaPelanggan || 'Umum',
                 keterangan: values.keterangan,
                 buktiUrl: buktiUrl,
-                
-                // Detail Retur
                 itemsReturDetail: itemsDetailRecord,
                 itemsReturRingkas: itemsDetailRecord.map(i => `${i.judulBuku} (x${i.qty})`).join(', '),
                 totalDiskon: values.totalDiskon,
-                
-                // Composite Key untuk Indexing
                 index_kategori_tanggal: `Retur Buku_${timestamp}`
             };
 
-            // Simpan di MUTASI (Kas Gabungan)
             updates[`mutasi/${returId}`] = mutasiData;
-            
-            // Simpan di HISTORI RETUR (Stream Khusus untuk Pelacakan)
             updates[`historiRetur/${returId}`] = {
                 ...mutasiData,
                 refId: invoiceId,
@@ -407,10 +429,9 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
 
             await update(ref(db), updates);
             
-            message.success({ content: 'Retur berhasil diproses (Stok dikembalikan)!', key: 'save' });
+            message.success({ content: `Retur ${returId} berhasil diproses!`, key: 'save' });
             onCancel();
 
-            // Opsional: Trigger Print Nota Retur
             modal.confirm({
                 title: 'Cetak Nota Retur?',
                 icon: <PrinterOutlined />,
@@ -440,26 +461,20 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                     const itemsDiretur = initialValues.itemsReturDetail || [];
                     const updates = {};
 
-                    // 1. Hapus Mutasi & History Retur
                     updates[`mutasi/${returId}`] = null;
                     updates[`historiRetur/${returId}`] = null;
 
-                    // 2. Tarik Kembali Stok (Karena batal retur = barang dianggap keluar lagi/terjual)
-                    // Kita tidak perlu mengupdate Invoice karena Invoice tidak pernah berubah.
-                    // Kita hanya perlu mengoreksi stok.
                     for (const rItem of itemsDiretur) {
                         const bSnap = await get(ref(db, `buku/${rItem.idBuku}`));
                         if (bSnap.exists()) {
                             const sNow = Number(bSnap.val().stok || 0);
-                            // KURANGI STOK (Batal retur)
                             updates[`buku/${rItem.idBuku}/stok`] = sNow - Number(rItem.qty);
                             
-                            // Log History (Koreksi)
                             const logId = push(ref(db, 'historiStok')).key;
                             updates[`historiStok/${logId}`] = {
                                 bukuId: rItem.idBuku,
                                 judul: rItem.judulBuku,
-                                perubahan: -Number(rItem.qty), // Negatif (stok keluar lagi)
+                                perubahan: -Number(rItem.qty), 
                                 keterangan: `Batal Retur ${returId}`,
                                 timestamp: dayjs().valueOf()
                             };
@@ -533,29 +548,29 @@ const ReturForm = ({ open, onCancel, initialValues }) => {
                         <Col span={12}>
                             <Form.Item name="idTransaksi" label="Pilih Invoice Asal" rules={[{ required: true }]}>
                                 <Select
-    showSearch
-    placeholder="Cari No Invoice / Nama Pelanggan"
-    onSearch={handleSearchInvoice}
-    onSelect={handleSelectInvoice}
-    filterOption={false}
-    notFoundContent={isSearching ? <Spin size="small" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
-    disabled={!!initialValues}
-    listHeight={250}
->
-    {invoiceOptions.map(i => (
-        <Option key={i.id} value={i.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>
-                    <span style={{ fontWeight: 500 }}>{i.namaPelanggan}</span>
-                    <span style={{ color: '#8c8c8c' }}> - {i.nomorInvoice}</span>
-                </span>
-                <span style={{ fontWeight: 'bold', color: '#1890ff', marginLeft: 10 }}>
-                    {currencyFormatter(i.totalTagihan || 0)}
-                </span>
-            </div>
-        </Option>
-    ))}
-</Select>
+                                    showSearch
+                                    placeholder="Cari No Invoice / Nama Pelanggan"
+                                    onSearch={handleSearchInvoice}
+                                    onSelect={handleSelectInvoice}
+                                    filterOption={false}
+                                    notFoundContent={isSearching ? <Spin size="small" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+                                    disabled={!!initialValues}
+                                    listHeight={250}
+                                >
+                                    {invoiceOptions.map(i => (
+                                        <Option key={i.id} value={i.id}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span>
+                                                    <span style={{ fontWeight: 500 }}>{i.namaPelanggan}</span>
+                                                    <span style={{ color: '#8c8c8c' }}> - {i.nomorInvoice}</span>
+                                                </span>
+                                                <span style={{ fontWeight: 'bold', color: '#1890ff', marginLeft: 10 }}>
+                                                    {currencyFormatter(i.totalTagihan || 0)}
+                                                </span>
+                                            </div>
+                                        </Option>
+                                    ))}
+                                </Select>
                             </Form.Item>
                         </Col>
                     </Row>

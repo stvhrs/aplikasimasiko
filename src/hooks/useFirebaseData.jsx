@@ -5,142 +5,24 @@ import {
 } from "firebase/database";
 import dayjs from 'dayjs';
 
-// --- SINGLETON STATE (Variable di luar Hook) ---
-// Data ini akan tetap hidup di memori selama aplikasi tidak di-refresh browser-nya.
 
-// Store Pembayaran
-let globalPembayaran = {
+// --- SINGLETON STATE ---
+// Export agar bisa diakses komponen untuk set Initial State
+export const globalPembayaran = {
     data: [],
     loading: false,
     unsubscribe: null,
-    rangeKey: null // Untuk mengecek apakah filter tanggal berubah
+    rangeKey: null,
+    lastDateRange: null // TAMBAHAN: Simpan object date range terakhir
 };
 
-// Store Retur
-let globalRetur = {
+export const globalRetur = {
     data: [],
     loading: false,
     unsubscribe: null,
-    rangeKey: null
+    rangeKey: null,
+    lastDateRange: null
 };
-
-// --- HOOK PEMBAYARAN ---
-export const usePembayaranStream = (dateRange) => {
-    // State lokal untuk memicu re-render komponen
-    const [data, setData] = useState(globalPembayaran.data);
-    const [loading, setLoading] = useState(globalPembayaran.loading || (globalPembayaran.data.length === 0));
-
-    useEffect(() => {
-        // Buat key unik dari tanggal untuk cek perubahan filter
-        const start = dateRange ? dayjs(dateRange[0]).format('YYYY-MM-DD') : 'start';
-        const end = dateRange ? dayjs(dateRange[1]).format('YYYY-MM-DD') : 'end';
-        const currentRangeKey = `${start}_${end}`;
-
-        // LOGIKA SINGLETON:
-        // Jika stream sudah ada DAN range tanggalnya sama, JANGAN reload.
-        if (globalPembayaran.unsubscribe && globalPembayaran.rangeKey === currentRangeKey) {
-            setData(globalPembayaran.data);
-            setLoading(false);
-            
-            // Kita tetap perlu listener dummy atau cara untuk update state lokal jika ada data baru masuk
-            // Tapi karena onValue di bawah mengupdate variabel global, kita perlu attach listener baru? 
-            // TIDAK. Di React, kita harus setup listener baru yang mengupdate state lokal ini.
-            
-            // KOREKSI: Karena onValue hanya jalan sekali di singleton, kita harus menimpa callback-nya 
-            // atau membuat mekanisme observer. 
-            // Cara termudah & teraman tanpa over-engineering: 
-            // Kita RESTART stream HANYA jika tanggal berubah. Jika tanggal sama, kita biarkan stream lama jalan
-            // TAPI kita harus bisa menangkap update-nya ke state lokal component ini.
-            
-            // Solusi Hybrid: 
-            // Kita matikan stream lama jika range berubah, lalu buat baru.
-        }
-
-        // Jika range berubah ATAU belum ada stream, buat baru.
-        if (globalPembayaran.rangeKey !== currentRangeKey || !globalPembayaran.unsubscribe) {
-            
-            // 1. Cleanup stream lama jika ada
-            if (globalPembayaran.unsubscribe) {
-                globalPembayaran.unsubscribe();
-            }
-
-            setLoading(true);
-            globalPembayaran.loading = true;
-            globalPembayaran.rangeKey = currentRangeKey;
-
-            const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
-            const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
-
-            const q = query(
-                ref(db, 'historiPembayaran'), 
-                orderByChild('tanggal'), 
-                startAt(startDate), 
-                endAt(endDate)
-            );
-
-            // 2. Setup Stream Baru
-            globalPembayaran.unsubscribe = onValue(q, (snapshot) => {
-                const list = [];
-                if (snapshot.exists()) {
-                    snapshot.forEach((child) => {
-                        list.push({ id: child.key, ...child.val() });
-                    });
-                }
-                list.reverse(); // Terbaru diatas
-
-                // Update Global Singleton
-                globalPembayaran.data = list;
-                globalPembayaran.loading = false;
-
-                // Update Lokal State (agar UI berubah)
-                setData(list);
-                setLoading(false);
-            });
-        } else {
-            // Jika Stream sudah ada & Range SAMA, kita perlu "Hook" ke update stream tsb.
-            // Sayangnya Firebase onValue callback terikat scope lama.
-            // Trik Singleton React: Kita reset onValue dengan callback yang membungkus setData INI.
-            
-            // Agar aman dan simple: Kita biarkan logic di atas me-restart stream jika range beda.
-            // TAPI jika range sama, kita attach ulang onValue agar setData component aktif ini yang dipanggil.
-            // (Ini cost-nya murah karena data di cache firebase SDK sudah ada).
-            
-            // NAMUN, permintaan Anda adalah "Tidak Reload". 
-            // Maka kita pakai data global dulu sebagai initial state (sudah di useState di atas).
-            
-            // Kita timpa listener lama dengan listener baru yang mengarah ke komponen aktif ini
-             const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
-             const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
-             const q = query(ref(db, 'historiPembayaran'), orderByChild('tanggal'), startAt(startDate), endAt(endDate));
-             
-             // Matikan yang lama (yang mengarah ke component yang sudah unmount)
-             if(globalPembayaran.unsubscribe) globalPembayaran.unsubscribe();
-
-             // Hidupkan yang baru mengarah ke component ini
-             globalPembayaran.unsubscribe = onValue(q, (snapshot) => {
-                 const list = [];
-                 if (snapshot.exists()) {
-                     snapshot.forEach((child) => {
-                         list.push({ id: child.key, ...child.val() });
-                     });
-                 }
-                 list.reverse();
-                 globalPembayaran.data = list;
-                 setData(list); // Update UI
-             });
-        }
-
-        // Cleanup: Saat unmount, KITA TIDAK MATIKAN STREAM DATABASE (globalPembayaran.unsubscribe).
-        // Kita biarkan menggantung agar saat balik lagi datanya instan.
-        // HANYA matikan jika range tanggal berubah di effect selanjutnya.
-        
-    }, [dateRange]);
-
-    return { pembayaranList: data, loadingPembayaran: loading };
-};
-
-
-// --- HOOK RETUR (Pola Sama) ---
 export const useReturStream = (dateRange) => {
     const [data, setData] = useState(globalRetur.data);
     const [loading, setLoading] = useState(globalRetur.loading || (globalRetur.data.length === 0));
@@ -187,6 +69,90 @@ export const useReturStream = (dateRange) => {
     }, [dateRange]);
 
     return { returList: data, loadingRetur: loading };
+};
+// --- HOOK PEMBAYARAN ---
+export const usePembayaranStream = (dateRange) => {
+    // Init state dari global (agar instan saat mount)
+    const [data, setData] = useState(globalPembayaran.data);
+    const [loading, setLoading] = useState(
+        // Loading hanya true jika data kosong DAN global juga sedang loading/kosong
+        globalPembayaran.data.length === 0 
+    );
+
+    useEffect(() => {
+        const start = dateRange ? dayjs(dateRange[0]).format('YYYY-MM-DD') : 'start';
+        const end = dateRange ? dayjs(dateRange[1]).format('YYYY-MM-DD') : 'end';
+        const currentRangeKey = `${start}_${end}`;
+
+        // LOGIKA UTAMA:
+        // Cek apakah filter tanggal berubah dari yang tersimpan di memori global?
+        const isRangeChanged = globalPembayaran.rangeKey !== currentRangeKey;
+
+        if (isRangeChanged) {
+            // JIKA TANGGAL BEDA: Set loading true, reset data visual
+            setLoading(true);
+            setData([]); 
+            globalPembayaran.loading = true;
+            globalPembayaran.rangeKey = currentRangeKey;
+            globalPembayaran.lastDateRange = dateRange; // Simpan range object untuk UI
+            
+            // Matikan listener lama karena query akan berubah
+            if (globalPembayaran.unsubscribe) {
+                globalPembayaran.unsubscribe();
+                globalPembayaran.unsubscribe = null;
+            }
+        }
+
+        // Jika listener sudah ada DAN tanggal sama, kita hanya perlu update callback setData
+        // Tapi Firebase onValue tidak support ganti callback.
+        // Triknya: Kita tetap subscribe ulang, TAPI karena data sudah ada di cache SDK,
+        // ini akan berjalan sangat cepat (hampir instan).
+        
+        // PENTING: Jangan unsubscribe jika range sama, kecuali kita mau replace listenernya.
+        // Di React strict mode, mount/unmount sering terjadi.
+        // Kita timpa listener lama.
+        if (globalPembayaran.unsubscribe) globalPembayaran.unsubscribe();
+
+        const startDate = dateRange ? dayjs(dateRange[0]).startOf('day').valueOf() : 0;
+        const endDate = dateRange ? dayjs(dateRange[1]).endOf('day').valueOf() : Date.now();
+        const q = query(
+            ref(db, 'historiPembayaran'), 
+            orderByChild('tanggal'), 
+            startAt(startDate), 
+            endAt(endDate)
+        );
+
+        globalPembayaran.unsubscribe = onValue(q, (snapshot) => {
+            const list = [];
+            if (snapshot.exists()) {
+                snapshot.forEach((child) => {
+                    list.push({ id: child.key, ...child.val() });
+                });
+            }
+            list.reverse();
+
+            // Update Global
+            globalPembayaran.data = list;
+            globalPembayaran.loading = false;
+
+            // Update Lokal
+            setData(list);
+            setLoading(false);
+        });
+
+        // Cleanup saat unmount page:
+        // JANGAN matikan globalPembayaran.unsubscribe di sini agar data tetap hidup di background/memori
+        return () => {
+            // Kosong: Biarkan stream tetap terbuka
+        };
+
+    }, [
+        // Gunakan string key sebagai dependency agar useEffect tidak jalan 
+        // hanya karena object dateRange direcreate oleh React
+        dateRange ? `${dayjs(dateRange[0]).format('YYYY-MM-DD')}_${dayjs(dateRange[1]).format('YYYY-MM-DD')}` : 'null'
+    ]);
+
+    return { pembayaranList: data, loadingPembayaran: loading };
 };
 // ============================================================================
 // 2. USE RETUR STREAM (Simple Stream)
